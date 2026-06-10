@@ -1,0 +1,104 @@
+import { STATUS, todayIso } from "./utils.js";
+
+export class DistratoService {
+  constructor(database) {
+    this.database = database;
+  }
+
+  async terminate(contract, reason, user, financial = {}) {
+    const now = todayIso();
+    const terminatedAt = financial.terminationDate
+      ? `${financial.terminationDate}T12:00:00`
+      : now;
+    const isDefaultTermination = financial.isDefaultTermination !== false;
+    const terminationClassification = isDefaultTermination ? "Inadimplência" : "Outros motivos";
+    const terminationStatus = isDefaultTermination ? STATUS.TERMINATED : STATUS.TERMINATED_OTHER;
+    const terminated = {
+      ...contract,
+      previousStatus: contract.appStatus,
+      manualStatus: terminationStatus,
+      isDefaultTermination,
+      terminationClassification,
+      terminationReason: reason,
+      terminatedAt,
+      terminatedBy: user,
+      lastUpdatedAt: now,
+      localUser: user,
+      hasRetention: Boolean(financial.hasRetention),
+      retainedValue: financial.hasRetention ? Number(financial.retainedValue || 0) : 0,
+      hasRefund: Boolean(financial.hasRefund),
+      refundValue: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
+    };
+
+    await this.database.deleteContract(contract.contractId);
+    await this.database.putTerminated(terminated);
+    await this.database.addAuditLog({
+      contractId: contract.contractId,
+      action: "terminate",
+      user,
+      reason,
+      previousStatus: contract.appStatus,
+      nextStatus: terminationStatus,
+      terminationClassification,
+      hasRetention: terminated.hasRetention,
+      retainedValue: terminated.retainedValue,
+      hasRefund: terminated.hasRefund,
+      refundValue: terminated.refundValue,
+      terminatedAt,
+    });
+  }
+
+  async restore(contract, user) {
+    const restored = {
+      ...contract,
+      manualStatus: null,
+      terminationReason: null,
+      terminatedAt: null,
+      terminatedBy: null,
+      previousStatus: null,
+      hasRetention: false,
+      retainedValue: 0,
+      hasRefund: false,
+      refundValue: 0,
+      lastUpdatedAt: todayIso(),
+      localUser: user,
+    };
+
+    await this.database.deleteTerminated(contract.contractId);
+    await this.database.putContract(restored);
+    await this.database.addAuditLog({
+      contractId: contract.contractId,
+      action: "restore",
+      user,
+      nextStatus: restored.manualStatus || "Derivado pela base",
+    });
+  }
+
+  async updateStatus(contract, nextStatus, user) {
+    const previousStatus = contract.appStatus;
+    const updated = {
+      ...contract,
+      manualStatus: nextStatus,
+      previousStatus,
+      lastUpdatedAt: todayIso(),
+      localUser: user,
+    };
+    await this.database.putContract(updated);
+    await this.database.addAuditLog({
+      contractId: contract.contractId,
+      action: "status-change",
+      user,
+      previousStatus,
+      nextStatus,
+    });
+  }
+
+  async updateNotes(contract, notes, user) {
+    await this.database.putContract({
+      ...contract,
+      notes,
+      lastUpdatedAt: todayIso(),
+      localUser: user,
+    });
+  }
+}

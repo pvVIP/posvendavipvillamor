@@ -1,0 +1,409 @@
+import {
+  getCategory,
+  normalizeHeader,
+  parseExcelDate,
+  toNumber,
+} from "./utils.js";
+
+const FIELD_ALIASES = {
+  contractId: ["localizador", "numero", "numero contrato", "n contrato", "contrato", "id contrato", "codigo contrato"],
+  createdAt: ["data", "data contrato", "data venda", "data cadastro"],
+  originReversal: ["origem reversao", "origem da reversao"],
+  sourceStatus: ["status", "estado", "situacao", "situacao contrato"],
+  property: ["imovel", "unidade", "apartamento"],
+  quota: ["cota", "numero cota"],
+  product: ["produto", "grupo produto", "tipo produto", "categoria produto"],
+  primaryClient: ["cessionario 1", "cliente", "nome cliente", "titular", "comprador", "nome"],
+  secondaryClient: ["cessionario 2", "segundo cessionario", "cotitular", "segundo comprador"],
+  primaryDocument: ["cpf/cnpj cessionario 1", "cpf/cnpj", "cpf", "cnpj", "documento cliente"],
+  secondaryDocument: ["cpf/cnpj cessionario 2", "cpf/cnpj cotitular", "documento cessionario 2"],
+  primaryPhone: ["telefone cessionario 1", "telefone", "celular", "whatsapp"],
+  secondaryPhone: ["telefone cessionario 2", "telefone cotitular"],
+  financialStatus: ["status financeiro", "situacao financeira", "estado financeiro"],
+  settlementDate: ["data quitacao", "data de quitacao"],
+  entryValue: ["entrada", "valor entrada"],
+  effectivePaidValue: [
+    "valor integralizado efetivo",
+    "valor integralizado",
+    "integralizado",
+    "valor pago",
+    "total pago",
+    "valor recebido",
+  ],
+  effectivePaidPercent: ["percentual integralizado efetivo", "percentual pago efetivo"],
+  remainingBalance: ["saldo restante", "saldo devedor", "saldo"],
+  totalUpdatedValue: ["valor total atualizado", "valor contrato", "valor total", "valor da venda"],
+  overdueValue: ["valor atrasado", "valor em atraso", "saldo atrasado", "inadimplencia"],
+  paidPercent: ["percentual integralizado", "percentual pago"],
+  nextDueDate: ["data proximo vencimento", "proximo vencimento", "data vencimento", "vencimento"],
+  primaryBirthDate: ["data nascimento cessionario 1", "data nascimento", "nascimento cliente"],
+  secondaryBirthDate: ["data nascimento cessionario 2", "nascimento cotitular"],
+};
+
+const FIELD_LABELS = {
+  contractId: "identificador do contrato",
+  sourceStatus: "status do contrato",
+  primaryClient: "cliente principal",
+  product: "produto/grupo",
+  effectivePaidValue: "valor integralizado",
+  overdueValue: "valor em atraso",
+  nextDueDate: "data do próximo vencimento",
+};
+
+const EXTRA_FIELD_RULES = [
+  {
+    terms: ["numero"],
+    contribution: "Será preservado como identificador auxiliar da origem e poderá apoiar conciliações futuras.",
+  },
+  {
+    terms: ["estado", "uf", "cidade", "municipio"],
+    contribution: "Pode permitir análises geográficas de carteira, inadimplência e distratos.",
+  },
+  {
+    terms: ["parcela", "prestacao"],
+    contribution: "Pode melhorar quantidade de parcelas em atraso, aging e priorização de cobrança.",
+  },
+  {
+    terms: ["pagamento", "pago", "integralizado", "recebido"],
+    contribution: "Pode aprimorar indicadores de valor integralizado e recuperação financeira.",
+  },
+  {
+    terms: ["email", "telefone", "contato", "whatsapp"],
+    contribution: "Pode contribuir para um futuro CRM e ações operacionais de cobrança.",
+  },
+  {
+    terms: ["vendedor", "canal", "origem", "campanha"],
+    contribution: "Pode permitir análises de risco e inadimplência por canal de venda.",
+  },
+  {
+    terms: ["empreendimento", "bloco", "torre", "unidade", "apartamento"],
+    contribution: "Pode ampliar a segmentação física e financeira da carteira.",
+  },
+  {
+    terms: ["distrato", "retencao", "reembolso", "devolucao", "cancelamento", "reversao"],
+    contribution: "Será usado para identificar distratos históricos, datas, motivos e reversões provenientes da base.",
+  },
+  {
+    terms: ["negociacao", "acordo", "cobranca", "promessa"],
+    contribution: "Pode apoiar histórico de negociação, cobrança e previsão de recebimento.",
+  },
+  {
+    terms: ["score", "risco", "classificacao"],
+    contribution: "Pode contribuir para score de risco e priorização automática.",
+  },
+];
+
+const ALIAS_TO_FIELD = buildAliasIndex();
+
+export async function parseWorkbookFile(file) {
+  if (!window.XLSX) {
+    throw new Error("Biblioteca SheetJS ainda não carregou. Tente novamente em alguns segundos.");
+  }
+
+  const buffer = await file.arrayBuffer();
+  const workbook = window.XLSX.read(buffer, { type: "array", cellDates: true });
+  const sheetName = workbook.SheetNames.includes("BASEDEDADOS") ? "BASEDEDADOS" : workbook.SheetNames[0];
+  const sheet = workbook.Sheets[sheetName];
+  const sourceRows = window.XLSX.utils.sheet_to_json(sheet, { defval: null });
+  const headers = Object.keys(sourceRows[0] || {});
+  const resolvedHeaders = resolveHeaders(headers);
+  const { rows, ignoredRows } = removeVerifiedSummaryRows(sourceRows, resolvedHeaders);
+  const validation = validateRows(rows, resolvedHeaders, {
+    sourceRows: sourceRows.length,
+    ignoredRows,
+  });
+  const columnAnalysis = analyzeColumns(headers, resolvedHeaders);
+
+  if (validation.errors.length) {
+    return { contracts: [], validation, columnAnalysis, sheetName };
+  }
+
+  const contracts = rows.map((row) => normalizeImportedRow(row, resolvedHeaders));
+  return { contracts, validation, columnAnalysis, sheetName };
+}
+
+function removeVerifiedSummaryRows(rows, resolvedHeaders) {
+  const contractHeader = resolvedHeaders.get("contractId");
+  const statusHeader = resolvedHeaders.get("sourceStatus");
+  const clientHeader = resolvedHeaders.get("primaryClient");
+  const productHeader = resolvedHeaders.get("product");
+  const financialHeaders = [
+    resolvedHeaders.get("entryValue"),
+    resolvedHeaders.get("effectivePaidValue"),
+    resolvedHeaders.get("remainingBalance"),
+    resolvedHeaders.get("totalUpdatedValue"),
+    resolvedHeaders.get("overdueValue"),
+  ].filter(Boolean);
+  const ignoredRows = [];
+  const keptRows = [];
+
+  rows.forEach((row, index) => {
+    const identifier = String(contractHeader ? row[contractHeader] ?? "" : "").trim();
+    const status = String(statusHeader ? row[statusHeader] ?? "" : "").trim();
+    const client = String(clientHeader ? row[clientHeader] ?? "" : "").trim();
+    const product = String(productHeader ? row[productHeader] ?? "" : "").trim();
+    const populatedCells = Object.values(row).filter((value) => value !== null && value !== undefined && String(value).trim() !== "");
+    const financialTotals = financialHeaders.filter((header) => {
+      const value = row[header];
+      return value !== null && value !== undefined && String(value).trim() !== "";
+    });
+    const quantityMatch = identifier.match(/^qtd(?:\.|ade)?\s*:\s*(\d+)\s*$/i);
+    const declaredQuantity = quantityMatch ? Number(quantityMatch[1]) : null;
+    const matchesDataRowCount = declaredQuantity === rows.length - 1;
+    const isVerifiedSummary = Boolean(
+      quantityMatch
+      && matchesDataRowCount
+      && !status
+      && !client
+      && !product
+      && populatedCells.length <= 8
+      && financialTotals.length >= 2
+    );
+
+    if (isVerifiedSummary) {
+      ignoredRows.push({
+        line: index + 2,
+        identifier,
+        reason: `Linha de total verificada: quantidade declarada (${declaredQuantity}) coincide com as linhas de contratos e não possui status, cliente ou produto.`,
+      });
+    } else {
+      keptRows.push(row);
+    }
+  });
+
+  return { rows: keptRows, ignoredRows };
+}
+
+function buildAliasIndex() {
+  const index = new Map();
+  Object.entries(FIELD_ALIASES).forEach(([field, aliases]) => {
+    aliases.forEach((alias) => index.set(normalizeHeader(alias), field));
+  });
+  return index;
+}
+
+function resolveHeaders(headers) {
+  const resolved = new Map();
+  headers.forEach((header) => {
+    const field = ALIAS_TO_FIELD.get(normalizeHeader(header));
+    if (field && !resolved.has(field)) resolved.set(field, header);
+  });
+  return resolved;
+}
+
+function validateRows(rows, resolvedHeaders, importSummary = {}) {
+  const errors = [];
+  const warnings = [];
+  const statusCounts = { active: 0, terminated: 0, reverted: 0, unknown: 0 };
+
+  if (!rows.length) errors.push("A planilha não possui linhas de dados.");
+  if (!resolvedHeaders.has("contractId")) {
+    errors.push("Não foi encontrada uma coluna confiável de contrato. Use LOCALIZADOR, NÚMERO ou CONTRATO.");
+  }
+  if (!resolvedHeaders.has("sourceStatus")) {
+    errors.push("Não foi encontrada a coluna STATUS ou ESTADO. Ela é obrigatória para separar ativos, cancelados e revertidos.");
+  }
+
+  ["primaryClient", "product", "effectivePaidValue", "overdueValue", "nextDueDate"].forEach((field) => {
+    if (!resolvedHeaders.has(field)) {
+      warnings.push(`Campo não encontrado: ${FIELD_LABELS[field]}. Indicadores relacionados poderão ficar incompletos.`);
+    }
+  });
+
+  if (!resolvedHeaders.has("contractId") || !resolvedHeaders.has("sourceStatus")) {
+    return {
+      ok: false,
+      errors,
+      warnings,
+      totalRows: rows.length,
+      sourceRows: importSummary.sourceRows ?? rows.length,
+      ignoredRows: importSummary.ignoredRows || [],
+      statusCounts,
+    };
+  }
+
+  const contractHeader = resolvedHeaders.get("contractId");
+  const statusHeader = resolvedHeaders.get("sourceStatus");
+  const clientHeader = resolvedHeaders.get("primaryClient");
+  const totalHeader = resolvedHeaders.get("totalUpdatedValue");
+  const overdueHeader = resolvedHeaders.get("overdueValue");
+  const seen = new Set();
+  let negativeTotalCount = 0;
+  let negativeOverdueCount = 0;
+  let missingClientCount = 0;
+  const unknownStatuses = new Map();
+
+  rows.forEach((row, index) => {
+    const line = index + 2;
+    const contractId = row[contractHeader];
+    if (contractId === null || contractId === undefined || String(contractId).trim() === "") {
+      errors.push(`Linha ${line}: identificador do contrato vazio.`);
+    } else if (seen.has(String(contractId).trim())) {
+      errors.push(`Linha ${line}: contrato duplicado (${contractId}).`);
+    }
+    seen.add(String(contractId).trim());
+
+    if (totalHeader && toNumber(row[totalHeader]) < 0) negativeTotalCount += 1;
+    if (overdueHeader && toNumber(row[overdueHeader]) < 0) negativeOverdueCount += 1;
+    if (clientHeader && !row[clientHeader]) missingClientCount += 1;
+    const status = normalizeHeader(row[statusHeader]);
+    const reverted = ["revertid", "reativad", "restaurad"].some((term) => status.includes(term));
+    const terminated = !reverted && ["distrat", "cancelad", "rescind", "rescis"].some((term) => status.includes(term));
+    const recognized = status === "ativo" || terminated || reverted;
+    if (status === "ativo") statusCounts.active += 1;
+    else if (reverted) statusCounts.reverted += 1;
+    else if (terminated) statusCounts.terminated += 1;
+    else statusCounts.unknown += 1;
+    if (!recognized) unknownStatuses.set(status || "vazio", (unknownStatuses.get(status || "vazio") || 0) + 1);
+  });
+
+  if (negativeTotalCount) {
+    warnings.push(
+      `${negativeTotalCount} registros possuem valor total negativo. O valor original será preservado e zero será usado nos indicadores para não reduzir artificialmente a carteira.`,
+    );
+  }
+  if (negativeOverdueCount) {
+    warnings.push(
+      `${negativeOverdueCount} registros possuem valor em atraso negativo. O valor original será preservado e esses casos não serão classificados como inadimplência.`,
+    );
+  }
+  if (missingClientCount) {
+    warnings.push(`${missingClientCount} registros estão sem cliente principal.`);
+  }
+  if (unknownStatuses.size) {
+    const summary = [...unknownStatuses.entries()].map(([status, count]) => `${status}: ${count}`).join(", ");
+    warnings.push(`Status ainda não classificados (${summary}). Esses registros serão preservados em Alertas de Dados e ficarão fora dos indicadores.`);
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors,
+    warnings,
+    totalRows: rows.length,
+    sourceRows: importSummary.sourceRows ?? rows.length,
+    ignoredRows: importSummary.ignoredRows || [],
+    statusCounts,
+  };
+}
+
+function analyzeColumns(headers, resolvedHeaders) {
+  const mappedHeaderSet = new Set(resolvedHeaders.values());
+  const mapped = [...resolvedHeaders.entries()].map(([field, header]) => ({ header, field }));
+  const extras = headers
+    .filter((header) => !mappedHeaderSet.has(header))
+    .map((header) => {
+      const normalized = normalizeHeader(header);
+      const rule = EXTRA_FIELD_RULES.find((item) => item.terms.some((term) => normalized.includes(term)));
+      return {
+        header,
+        classification: rule ? "potentially-useful" : "unclassified",
+        contribution: rule
+          ? rule.contribution
+          : "Será preservado como dado adicional, mas ainda não possui uso confiável nos indicadores atuais.",
+      };
+    });
+
+  return {
+    mapped,
+    extras,
+    usefulExtras: extras.filter((item) => item.classification === "potentially-useful"),
+    unknownExtras: extras.filter((item) => item.classification === "unclassified"),
+  };
+}
+
+function normalizeImportedRow(row, resolvedHeaders) {
+  const output = {};
+  const mappedSourceHeaders = new Set();
+
+  Object.keys(FIELD_ALIASES).forEach((field) => {
+    const header = resolvedHeaders.get(field);
+    output[field] = header ? row[header] : null;
+    if (header) mappedSourceHeaders.add(header);
+  });
+
+  const sourceExtras = Object.fromEntries(
+    Object.entries(row)
+      .filter(([header]) => !mappedSourceHeaders.has(header))
+      .map(([header, value]) => [header, normalizeExtraValue(value)]),
+  );
+
+  const product = String(output.product || "");
+  const sourceTermination = detectSourceTermination(row, output);
+  const totalUpdatedValue = toNumber(output.totalUpdatedValue);
+  const overdueValue = toNumber(output.overdueValue);
+  const sourceFinancialAdjustments = {
+    totalUpdatedValue: totalUpdatedValue < 0 ? totalUpdatedValue : null,
+    overdueValue: overdueValue < 0 ? overdueValue : null,
+  };
+  return {
+    ...output,
+    contractId: String(output.contractId).trim(),
+    createdAt: parseExcelDate(output.createdAt),
+    settlementDate: parseExcelDate(output.settlementDate),
+    nextDueDate: parseExcelDate(output.nextDueDate),
+    entryValue: toNumber(output.entryValue),
+    effectivePaidValue: toNumber(output.effectivePaidValue),
+    effectivePaidPercent: toNumber(output.effectivePaidPercent),
+    remainingBalance: toNumber(output.remainingBalance),
+    totalUpdatedValue: Math.max(0, totalUpdatedValue),
+    overdueValue: Math.max(0, overdueValue),
+    paidPercent: toNumber(output.paidPercent),
+    category: getCategory(product),
+    sourceExtras,
+    sourceFinancialAdjustments,
+    ...sourceTermination,
+    notes: "",
+    manualStatus: null,
+    previousStatus: null,
+    lastUpdatedAt: null,
+    localUser: "Operador Local",
+  };
+}
+
+function detectSourceTermination(row, output) {
+  const entries = Object.entries(row);
+  const statusText = normalizeHeader(`${output.sourceStatus || ""} ${output.financialStatus || ""}`);
+  const terminatedByStatus = ["distrat", "cancelad", "rescind", "rescis"].some((term) => statusText.includes(term));
+  const revertedByStatus = ["revertid", "reativad", "restaurad"].some((term) => statusText.includes(term));
+
+  const dateEntry = entries.find(([header, value]) => {
+    if (!value) return false;
+    const normalized = normalizeHeader(header);
+    return normalized.includes("data")
+      && ["distrat", "cancel", "rescis"].some((term) => normalized.includes(term));
+  });
+  const reversalEntry = entries.find(([header, value]) => {
+    if (!value) return false;
+    const normalized = normalizeHeader(header);
+    return normalized.includes("data")
+      && ["revers", "reativ", "restaur"].some((term) => normalized.includes(term));
+  });
+  const reasonEntry = entries.find(([header, value]) => {
+    if (!value) return false;
+    const normalized = normalizeHeader(header);
+    return ["motivo", "razao", "causa"].some((term) => normalized.includes(term))
+      && ["distrat", "cancel", "rescis"].some((term) => normalized.includes(term));
+  });
+
+  const sourceReverted = revertedByStatus || Boolean(reversalEntry);
+  const sourceTerminated = !sourceReverted && (terminatedByStatus || Boolean(dateEntry) || Boolean(reasonEntry));
+  return {
+    sourceTerminated,
+    sourceReverted,
+    sourceTerminationDate: dateEntry ? parseExcelDate(dateEntry[1]) : null,
+    sourceReversalDate: reversalEntry ? parseExcelDate(reversalEntry[1]) : null,
+    sourceTerminationReason: reasonEntry
+      ? String(reasonEntry[1])
+      : terminatedByStatus
+        ? String(output.sourceStatus || output.financialStatus || "Distrato identificado")
+        : null,
+    sourceTerminationOrigin: sourceTerminated ? "Base importada" : null,
+  };
+}
+
+function normalizeExtraValue(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+  if (value === undefined || value === null) return null;
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  return String(value);
+}

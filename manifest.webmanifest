@@ -1,0 +1,25 @@
+{
+  "name": "VILLAMOR INADIMPLÊNCIA",
+  "short_name": "VILLAMOR",
+  "description": "Gestão estratégica da inadimplência Villamor.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7eef2",
+  "theme_color": "#522b2c",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

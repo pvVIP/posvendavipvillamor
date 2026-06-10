@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#522b2c">
+  <meta name="description" content="Gestão estratégica da inadimplência Villamor.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Villamor | Controle da Inadimplência</title>
+  <link rel="icon" href="assets/icon-192.png" type="image/png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=20260610-12">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
+  <script src="js/app.js?v=20260610-11" type="module"></script>
+</head>
+<body>
+  <section class="auth-gate" id="authGate" hidden>
+    <div class="auth-panel">
+      <img src="assets/logo.png" alt="Villamor" class="auth-logo">
+      <div class="auth-heading">
+        <span>ACESSO SEGURO</span>
+        <h1>VILLAMOR INADIMPLÊNCIA</h1>
+        <p>Dados sincronizados para operação e apresentação em qualquer dispositivo.</p>
+      </div>
+      <form id="authForm" class="auth-form">
+        <label id="authNameField" hidden>
+          Nome
+          <input type="text" id="authDisplayName" autocomplete="name" placeholder="Seu nome">
+        </label>
+        <label>
+          E-mail
+          <input type="email" id="authEmail" autocomplete="email" required placeholder="nome@empresa.com">
+        </label>
+        <label>
+          Senha
+          <input type="password" id="authPassword" autocomplete="current-password" minlength="8" required>
+        </label>
+        <p class="auth-message" id="authMessage" role="status"></p>
+        <button class="primary-button auth-submit" id="authSubmitButton" type="submit">Entrar</button>
+        <button class="secondary-button auth-mode-button" id="authModeButton" type="button">Criar primeiro acesso</button>
+      </form>
+      <small class="auth-security">Contas novas dependem de aprovação. Os dados permanecem protegidos no Supabase.</small>
+    </div>
+  </section>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="assets/logo.png" alt="Villamor" class="brand-logo">
+        <div>
+          <strong>VILLAMOR</strong>
+          <span>INADIMPLÊNCIA</span>
+        </div>
+      </div>
+      <nav class="nav-tabs" aria-label="Navegação principal">
+        <button class="nav-tab active" data-tab-target="operational">
+          <span class="nav-icon">▦</span>
+          Operacionalização
+        </button>
+        <button class="nav-tab" data-tab-target="terminations">
+          <span class="nav-icon">×</span>
+          Distratos
+        </button>
+        <button class="nav-tab" data-tab-target="reversions">
+          <span class="nav-icon">↺</span>
+          Reversões
+        </button>
+        <button class="nav-tab" data-tab-target="health">
+          <span class="nav-icon">!</span>
+          Alertas de Dados
+        </button>
+        <button class="nav-tab" data-tab-target="executive">
+          <span class="nav-icon">◈</span>
+          Dashboard Executivo
+        </button>
+      </nav>
+      <div class="sidebar-card">
+        <span id="userModeLabel">Usuário local</span>
+        <strong id="currentUserLabel">Operador Local</strong>
+        <small id="dataModeLabel">Dados neste dispositivo</small>
+        <button class="ghost-button compact" id="changeUserButton">Alterar</button>
+      </div>
+      <div class="sidebar-footer">
+        <div class="connection-status" id="connectionStatus" role="status">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connectionStatusLabel">Online</span>
+        </div>
+        <button class="ghost-button install-app-button" id="installAppButton" type="button" hidden>
+          Instalar aplicativo
+        </button>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-pressed="false">
+          <span class="theme-toggle-icon" aria-hidden="true">◐</span>
+          <span id="themeToggleLabel">Modo escuro</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1>GESTÃO DA INADIMPLÊNCIA - VTR</h1>
+        </div>
+        <div class="topbar-actions">
+          <button class="secondary-button" id="refreshButton">Recalcular</button>
+          <label class="primary-button file-button">
+            Atualização
+            <input type="file" id="uploadInput" accept=".xlsx,.xls">
+          </label>
+          <button class="primary-button" id="captureButton">Captura</button>
+        </div>
+      </header>
+
+      <section class="global-filters" aria-label="Filtros globais">
+        <label>
+          Busca
+          <input type="search" id="globalSearch" placeholder="Cliente, contrato, CPF, produto">
+        </label>
+        <label>
+          Categoria
+          <select id="categoryFilter"></select>
+        </label>
+        <label>
+          Grupo
+          <select id="groupFilter"></select>
+        </label>
+        <label>
+          Status
+          <select id="statusFilter"></select>
+        </label>
+        <label>
+          Atraso
+          <select id="agingFilter">
+            <option value="all">Todas as faixas</option>
+            <option value="0-30">0-30 dias</option>
+            <option value="31-60">31-60 dias</option>
+            <option value="61-90">61-90 dias</option>
+            <option value="91-180">91-180 dias</option>
+            <option value="180+">Acima de 180 dias</option>
+          </select>
+        </label>
+        <label>
+          Valor
+          <select id="valueFilter">
+            <option value="all">Todas as faixas</option>
+            <option value="0-50000">Até R$ 50 mil</option>
+            <option value="50000-150000">R$ 50-150 mil</option>
+            <option value="150000-500000">R$ 150-500 mil</option>
+            <option value="500000+">Acima de R$ 500 mil</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="tab-panel active" id="operationalPanel">
+        <div class="section-header performance-section-header">
+          <div class="performance-meter" id="operationalPerformance"></div>
+          <div class="table-actions">
+            <button class="secondary-button" id="clearFiltersButton">Limpar filtros</button>
+            <button class="danger-button" id="bulkTerminateButton">Distratar seleção</button>
+          </div>
+        </div>
+
+        <div class="metrics-row" id="operationalKpis"></div>
+
+        <div class="table-shell">
+          <div class="table-toolbar">
+            <span id="tableSummary">0 contratos</span>
+            <div class="pagination-size">
+              <span>Linhas</span>
+              <select id="pageSize">
+                <option>10</option>
+                <option selected>25</option>
+                <option>50</option>
+                <option>100</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="selectAllRows"></th>
+                  <th data-sort="contractId">Contrato</th>
+                  <th data-sort="primaryClient">Cliente</th>
+                  <th data-sort="category">Categoria</th>
+                  <th data-sort="product">Grupo</th>
+                  <th data-sort="effectivePaidValue">Integralizado</th>
+                  <th data-sort="overdueValue">Atraso</th>
+                  <th data-sort="daysOverdue">Dias</th>
+                  <th data-sort="appStatus">Status</th>
+                  <th>Observações</th>
+                  <th data-sort="lastUpdatedAt">Atualização</th>
+                </tr>
+              </thead>
+              <tbody id="contractsTableBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination">
+            <button class="ghost-button" id="prevPage">Anterior</button>
+            <span id="pageIndicator">Página 1</span>
+            <button class="ghost-button" id="nextPage">Próxima</button>
+          </div>
+        </div>
+
+      </section>
+
+      <section class="tab-panel" id="terminationsPanel">
+        <div class="section-header split">
+          <div>
+            <p class="eyebrow">Produção do setor</p>
+            <h2>Distratos lançados a partir de 07/05/2026</h2>
+          </div>
+          <span id="terminatedSummary">0 registros</span>
+        </div>
+        <div class="table-shell compact-table">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Contrato</th>
+                  <th>Cliente</th>
+                  <th>Integralizado</th>
+                  <th>Data do distrato</th>
+                  <th>Classificação</th>
+                  <th>Motivo</th>
+                  <th>Valor retido</th>
+                  <th>Reembolso</th>
+                  <th>Responsável</th>
+                  <th>Ação</th>
+                </tr>
+              </thead>
+              <tbody id="terminatedTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="section-header split historical-section-header">
+          <div>
+            <p class="eyebrow">Histórico importado</p>
+            <h2>Outros distratos identificados na base</h2>
+          </div>
+          <span id="historicalTerminatedSummary">0 registros</span>
+        </div>
+        <div class="table-shell compact-table">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Contrato</th>
+                  <th>Cliente</th>
+                  <th>Integralizado</th>
+                  <th>Data do distrato</th>
+                  <th>Motivo identificado</th>
+                  <th>Origem</th>
+                </tr>
+              </thead>
+              <tbody id="historicalTerminatedTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="reversionsPanel">
+        <div class="section-header split">
+          <div>
+            <p class="eyebrow">Histórico contratual</p>
+            <h2>Contratos revertidos</h2>
+            <p class="section-description">Registros antigos excluídos da carteira ativa e vinculados ao contrato atual quando a origem permite.</p>
+          </div>
+          <span id="reversionsSummary">0 registros</span>
+        </div>
+        <div class="metrics-row history-metrics" id="reversionKpis"></div>
+        <div class="table-shell compact-table">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Contrato revertido</th>
+                  <th>Cliente histórico</th>
+                  <th>Origem reversão</th>
+                  <th>Contrato ativo vinculado</th>
+                  <th>Cliente atual</th>
+                  <th>Data reversão</th>
+                  <th>Integralizado</th>
+                  <th>Vínculo</th>
+                </tr>
+              </thead>
+              <tbody id="reversionsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="healthPanel">
+        <div class="section-header split">
+          <div>
+            <p class="eyebrow">Governança da informação</p>
+            <h2>Saúde dos dados</h2>
+            <p class="section-description">Alertas que podem afetar indicadores, vínculos históricos e decisões operacionais.</p>
+          </div>
+          <span id="healthUpdatedAt"></span>
+        </div>
+        <div class="health-overview">
+          <article class="health-score-card">
+            <span>Índice de saúde</span>
+            <strong id="healthScore">100%</strong>
+            <div class="health-score-track"><div id="healthScoreFill"></div></div>
+            <small id="healthScoreLabel">Base consistente</small>
+          </article>
+          <div class="metrics-row health-metrics" id="healthKpis"></div>
+        </div>
+        <div class="health-alerts" id="healthAlerts"></div>
+      </section>
+
+      <section class="tab-panel" id="executivePanel">
+        <div id="dashboardCaptureArea" class="dashboard-capture-area">
+          <div class="section-header performance-section-header">
+            <div class="performance-meter" id="executivePerformance"></div>
+            <span id="dashboardDate"></span>
+          </div>
+
+          <div class="executive-brief" id="executiveBrief"></div>
+          <div class="metrics-grid" id="executiveKpis"></div>
+
+          <div class="dashboard-grid">
+            <article class="chart-panel wide">
+              <div class="panel-header">
+                <h3>Evolução da inadimplência</h3>
+              </div>
+              <canvas id="evolutionChart"></canvas>
+            </article>
+            <article class="chart-panel">
+              <div class="panel-header">
+                <h3>Distribuição por categoria</h3>
+              </div>
+              <canvas id="categoryChart"></canvas>
+            </article>
+            <article class="chart-panel">
+              <div class="panel-header">
+                <h3>Distribuição financeira</h3>
+              </div>
+              <canvas id="donutChart"></canvas>
+            </article>
+            <article class="chart-panel">
+              <div class="panel-header">
+                <h3>Funil operacional</h3>
+              </div>
+              <canvas id="funnelChart"></canvas>
+            </article>
+            <article class="chart-panel">
+              <div class="panel-header">
+                <h3>Aging list</h3>
+              </div>
+              <canvas id="agingChart"></canvas>
+            </article>
+            <article class="chart-panel wide">
+              <div class="panel-header">
+                <h3>Heatmap grupo/categoria</h3>
+              </div>
+              <div id="heatmapGrid" class="heatmap-grid"></div>
+            </article>
+          </div>
+
+          <div class="executive-bottom">
+            <article class="chart-panel">
+              <div class="panel-header">
+                <h3>Top 20 inadimplentes</h3>
+              </div>
+              <div id="rankingTable" class="ranking-list"></div>
+            </article>
+            <article class="chart-panel insights-panel">
+              <div class="panel-header">
+                <h3>Insights estratégicos</h3>
+              </div>
+              <div id="insightsList" class="insights-list"></div>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="terminateDialog" class="modal">
+    <form method="dialog" id="terminateForm">
+      <h2>Confirmação</h2>
+      <p class="modal-alert">Tem certeza que deseja distratar este contrato?</p>
+      <p>Esta operação removerá o contrato dos indicadores ativos.</p>
+      <label class="termination-date-field">
+        Data do distrato
+        <input type="date" id="terminationDate">
+      </label>
+      <div class="financial-switch-block termination-type-block">
+        <label class="switch-row" for="isDefaultTermination">
+          <span>
+            <strong>Distrato por inadimplência?</strong>
+            <small>Desative para classificar como distrato por outros motivos.</small>
+          </span>
+          <input type="checkbox" id="isDefaultTermination" checked>
+          <span class="switch-control" aria-hidden="true"></span>
+        </label>
+      </div>
+      <label>
+        Motivo do distrato
+        <textarea id="terminationReason" placeholder="Obrigatório apenas para confirmar o distrato"></textarea>
+      </label>
+      <div class="financial-switches">
+        <div class="financial-switch-block">
+          <label class="switch-row" for="hasRetention">
+            <span>
+              <strong>Houve retenção?</strong>
+              <small>Valor que permaneceu com o empreendimento.</small>
+            </span>
+            <input type="checkbox" id="hasRetention">
+            <span class="switch-control" aria-hidden="true"></span>
+          </label>
+          <label class="conditional-money-field" id="retainedValueField" hidden>
+            Valor retido
+            <span class="money-input-shell">
+              <span class="money-input-prefix">R$</span>
+              <input type="text" id="retainedValue" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Valor retido">
+            </span>
+          </label>
+        </div>
+        <div class="financial-switch-block">
+          <label class="switch-row" for="hasRefund">
+            <span>
+              <strong>Houve reembolso?</strong>
+              <small>Valor devolvido ao cliente.</small>
+            </span>
+            <input type="checkbox" id="hasRefund">
+            <span class="switch-control" aria-hidden="true"></span>
+          </label>
+          <label class="conditional-money-field" id="refundValueField" hidden>
+            Valor reembolsado
+            <span class="money-input-shell">
+              <span class="money-input-prefix">R$</span>
+              <input type="text" id="refundValue" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Valor reembolsado">
+            </span>
+          </label>
+        </div>
+      </div>
+      <p class="field-error" id="terminationReasonError" hidden>Informe o motivo para confirmar o distrato.</p>
+      <p class="field-error" id="terminationFinancialError" hidden>Preencha corretamente os valores financeiros selecionados.</p>
+      <div class="termination-financial-warning" id="terminationFinancialWarning" role="alert" aria-live="assertive" hidden>
+        <strong>Atenção: inconsistência financeira</strong>
+        <span id="terminationFinancialWarningText"></span>
+        <small>O distrato poderá ser confirmado, mas confira os valores antes de prosseguir.</small>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary-button" id="cancelTerminationButton">Cancelar</button>
+        <button type="submit" value="confirm" class="danger-button">Confirmar Distrato</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="importDialog" class="modal import-modal">
+    <form method="dialog">
+      <h2 id="importDialogTitle">Relatório de atualização</h2>
+      <div id="importReport" class="import-report"></div>
+      <div class="modal-actions">
+        <button type="button" class="secondary-button" id="cancelImportButton">Cancelar</button>
+        <button type="button" class="primary-button" id="confirmImportButton">Aplicar base e recalcular</button>
+        <button type="button" class="danger-button" id="restartImportButton" hidden>Aplicar e reiniciar</button>
+        <button type="button" class="primary-button" id="closeImportButton" hidden>Fechar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+  <div id="contractHoverCard" class="contract-hover-card" role="tooltip" hidden></div>
+</body>
+</html>
