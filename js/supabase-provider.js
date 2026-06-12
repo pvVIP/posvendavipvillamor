@@ -53,6 +53,7 @@ export class SupabaseProvider extends Database {
 
   getIdentity() {
     return {
+      id: this.profile?.id || this.client.session?.user?.id || null,
       name: this.profile?.display_name || this.client.session?.user?.email || "Usuário",
       email: this.client.session?.user?.email || "",
       role: this.profile?.role || "viewer",
@@ -72,17 +73,25 @@ export class SupabaseProvider extends Database {
   async getTerminatedContracts() {
     const rows = await this.client.selectAll(
       "terminations",
-      "select=contract_snapshot,terminated_at,reason,is_default_termination,has_retention,retained_value,has_refund,refund_value",
+      "select=contract_snapshot,terminated_at,reason,reason_category,approach_type,observation,is_default_termination,has_retention,retained_value,retention_total,has_refund,refund_value,created_by,created_at,updated_by,updated_at,edit_history",
     );
     return rows.map((row) => enrichContract({
       ...row.contract_snapshot,
       terminatedAt: row.terminated_at,
-      terminationReason: row.reason,
+      terminationReason: row.reason_category || row.reason,
+      terminationObservation: row.observation || row.contract_snapshot?.terminationObservation || "",
+      terminationApproach: row.approach_type || row.contract_snapshot?.terminationApproach || "nao_informada",
       isDefaultTermination: row.is_default_termination,
       hasRetention: row.has_retention,
       retainedValue: Number(row.retained_value || 0),
+      retentionTotal: row.retention_total,
       hasRefund: row.has_refund,
       refundValue: Number(row.refund_value || 0),
+      terminatedById: row.created_by,
+      terminationCreatedAt: row.created_at,
+      lastEditedById: row.updated_by,
+      lastEditedAt: row.updated_at,
+      terminationEditHistory: row.edit_history || [],
     }));
   }
 
@@ -164,20 +173,38 @@ export class SupabaseProvider extends Database {
   }
 
   async terminateContract(contractId, reason, financial = {}) {
-    await this.client.rpc("terminate_contract", {
+    await this.client.rpc("terminate_contract_v2", {
       p_contract_id: contractId,
-      p_reason: reason,
+      p_reason_category: reason,
+      p_observation: financial.observation || "",
+      p_approach_type: financial.approach,
       p_termination_date: dateOnly(financial.terminationDate) || dateOnly(todayIso()),
-      p_is_default_termination: financial.isDefaultTermination !== false,
       p_has_retention: Boolean(financial.hasRetention),
       p_retained_value: financial.hasRetention ? Number(financial.retainedValue || 0) : 0,
+      p_retention_total: Boolean(financial.retentionTotal),
       p_has_refund: Boolean(financial.hasRefund),
       p_refund_value: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
     });
   }
 
+  async editTermination(contractId, reason, financial = {}) {
+    await this.client.rpc("edit_termination", {
+      p_contract_id: contractId,
+      p_reason_category: reason,
+      p_observation: financial.observation || "",
+      p_approach_type: financial.approach,
+      p_termination_date: dateOnly(financial.terminationDate),
+      p_has_retention: Boolean(financial.hasRetention),
+      p_retained_value: financial.hasRetention ? Number(financial.retainedValue || 0) : 0,
+      p_retention_total: Boolean(financial.retentionTotal),
+      p_has_refund: Boolean(financial.hasRefund),
+      p_refund_value: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
+      p_edit_justification: financial.editJustification,
+    });
+  }
+
   async restoreContract(contractId) {
-    await this.client.rpc("restore_contract", {
+    await this.client.rpc("restore_contract_v2", {
       p_contract_id: contractId,
     });
   }
@@ -267,9 +294,13 @@ function terminationRow(contract) {
     contract_snapshot: cleanContract(contract),
     terminated_at: dateOnly(contract.terminatedAt) || dateOnly(todayIso()),
     reason: contract.terminationReason || "Distrato registrado",
+    reason_category: contract.terminationReason || "Não informado",
+    approach_type: contract.terminationApproach || "nao_informada",
+    observation: contract.terminationObservation || "",
     is_default_termination: contract.isDefaultTermination !== false,
     has_retention: Boolean(contract.hasRetention),
     retained_value: Number(contract.retainedValue || 0),
+    retention_total: Boolean(contract.retentionTotal),
     has_refund: Boolean(contract.hasRefund),
     refund_value: Number(contract.refundValue || 0),
   };

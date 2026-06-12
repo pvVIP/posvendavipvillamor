@@ -2430,6 +2430,133 @@ textarea:focus {
   padding: 16px 18px;
 }
 
+.termination-hub-header {
+  gap: 18px;
+}
+
+.termination-hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.termination-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(130px, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.termination-filters label {
+  display: grid;
+  gap: 6px;
+}
+
+.termination-metrics {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.termination-consolidated {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: -2px 0 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--surface);
+}
+
+.termination-consolidated > div > span {
+  display: block;
+  margin-bottom: 9px;
+  color: var(--brand-dark);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.termination-breakdown-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.termination-breakdown-list > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.termination-breakdown-list strong {
+  color: var(--ink);
+}
+
+.termination-observation-cell {
+  min-width: 180px;
+  max-width: 280px;
+  white-space: normal;
+}
+
+.termination-row-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  min-width: 150px;
+  background: var(--surface);
+  box-shadow: -8px 0 12px rgba(25, 28, 32, 0.06);
+}
+
+.termination-row-actions > div {
+  display: flex;
+  gap: 6px;
+}
+
+#terminationsPanel .data-table th:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+}
+
+[data-theme="dark"] .termination-row-actions {
+  background: var(--surface);
+  box-shadow: -8px 0 12px rgba(0, 0, 0, 0.18);
+}
+
+.termination-contract-summary {
+  display: grid;
+  gap: 3px;
+  padding: 12px;
+  border-left: 4px solid var(--brand);
+  border-radius: 4px;
+  background: var(--surface-soft);
+}
+
+.termination-contract-summary span,
+.termination-contract-summary small {
+  color: var(--muted);
+}
+
+.compact-switch-row {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
 .performance-section-header {
   min-height: 96px;
 }
@@ -2891,6 +3018,11 @@ textarea:focus {
   background: #292d32;
 }
 
+[data-theme="dark"] .termination-filters,
+[data-theme="dark"] .termination-consolidated {
+  background: var(--surface);
+}
+
 [data-theme="dark"] .table-toolbar > strong,
 [data-theme="dark"] .data-table th {
   color: #edf1f4;
@@ -2946,6 +3078,10 @@ textarea:focus {
   }
 
   .metrics-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .termination-filters {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -3056,6 +3192,35 @@ textarea:focus {
 
   .section-header {
     padding: 14px;
+  }
+
+  .termination-hub-header,
+  .termination-hub-actions {
+    align-items: stretch;
+  }
+
+  .termination-hub-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .termination-hub-actions .primary-button {
+    grid-column: 1 / -1;
+  }
+
+  .termination-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px;
+  }
+
+  .termination-filters label:first-child,
+  .termination-filters .ghost-button {
+    grid-column: 1 / -1;
+  }
+
+  .termination-consolidated {
+    grid-template-columns: 1fr;
   }
 
   .performance-meter-head {
@@ -3172,6 +3337,17 @@ textarea:focus {
 
   .financial-switches {
     grid-template-columns: 1fr;
+  }
+
+  .termination-filters,
+  .termination-hub-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .termination-hub-actions .primary-button,
+  .termination-filters label:first-child,
+  .termination-filters .ghost-button {
+    grid-column: auto;
   }
 }
 

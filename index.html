@@ -14,11 +14,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260612-1">
+  <link rel="stylesheet" href="css/style.css?v=20260612-3">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
-  <script src="js/app.js?v=20260611-1" type="module"></script>
+  <script src="js/app.js?v=20260612-3" type="module"></script>
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -214,14 +214,54 @@
       </section>
 
       <section class="tab-panel" id="terminationsPanel" role="region" aria-labelledby="terminationsTab">
-        <div class="section-header split">
+        <div class="section-header split termination-hub-header">
           <div>
-            <p class="eyebrow">Produção do setor</p>
+            <p class="eyebrow">Central de controle</p>
             <h2>Distratos lançados a partir de 07/05/2026</h2>
+            <p class="section-description">Produção do setor, valores efetivamente retidos e contexto de cada encerramento.</p>
           </div>
-          <span id="terminatedSummary" aria-live="polite">0 registros</span>
+          <div class="termination-hub-actions">
+            <button class="primary-button" id="newTerminationButton" type="button">Lançar distrato</button>
+            <button class="secondary-button" id="formalTerminationReportButton" type="button">Relatório formal</button>
+            <button class="secondary-button" id="executiveTerminationReportButton" type="button">Resumo diretoria</button>
+          </div>
         </div>
+        <div class="termination-filters" role="search" aria-label="Filtros dos distratos">
+          <label>
+            Buscar
+            <input type="search" id="terminationSearch" placeholder="Cliente ou contrato">
+          </label>
+          <label>
+            Motivo
+            <select id="terminationReasonFilter">
+              <option value="all">Todos</option>
+            </select>
+          </label>
+          <label>
+            Abordagem
+            <select id="terminationApproachFilter">
+              <option value="all">Todas</option>
+              <option value="ativa">Ativa</option>
+              <option value="receptiva">Receptiva</option>
+              <option value="nao_informada">Não informada</option>
+            </select>
+          </label>
+          <label>
+            De
+            <input type="date" id="terminationStartDate">
+          </label>
+          <label>
+            Até
+            <input type="date" id="terminationEndDate">
+          </label>
+          <button class="ghost-button" id="clearTerminationFiltersButton" type="button">Limpar</button>
+        </div>
+        <div class="metrics-row termination-metrics" id="terminationKpis" aria-live="polite"></div>
         <div class="table-shell compact-table">
+          <div class="table-toolbar">
+            <strong id="terminatedSummary" aria-live="polite">0 registros</strong>
+            <span>Recuperado = valor efetivamente retido</span>
+          </div>
           <div class="table-scroll" tabindex="0" aria-label="Distratos lançados">
             <table class="data-table">
               <caption class="sr-only">Distratos lançados a partir de 7 de maio de 2026</caption>
@@ -231,10 +271,11 @@
                   <th scope="col">Cliente</th>
                   <th scope="col">Integralizado</th>
                   <th scope="col">Data do distrato</th>
-                  <th scope="col">Classificação</th>
                   <th scope="col">Motivo</th>
+                  <th scope="col">Abordagem</th>
                   <th scope="col">Valor retido</th>
                   <th scope="col">Reembolso</th>
+                  <th scope="col">Observação</th>
                   <th scope="col">Responsável</th>
                   <th scope="col">Ação</th>
                 </tr>
@@ -243,6 +284,7 @@
             </table>
           </div>
         </div>
+        <div class="termination-consolidated" id="terminationConsolidated" aria-live="polite"></div>
 
         <div class="section-header split historical-section-header">
           <div>
@@ -396,23 +438,40 @@
     <form method="dialog" id="terminateForm">
       <h2 id="terminateDialogTitle">Confirmar distrato</h2>
       <p class="modal-alert" id="terminateDialogDescription">Esta operação removerá o contrato dos indicadores ativos.</p>
+      <label id="terminationContractField" hidden>
+        Contrato
+        <select id="terminationContractSelect"></select>
+      </label>
+      <div class="termination-contract-summary" id="terminationContractSummary"></div>
       <label class="termination-date-field">
         Data do distrato
         <input type="date" id="terminationDate">
       </label>
-      <div class="financial-switch-block termination-type-block">
-        <label class="switch-row" for="isDefaultTermination">
-          <span>
-            <strong>Distrato por inadimplência?</strong>
-            <small>Desative para classificar como distrato por outros motivos.</small>
-          </span>
-          <input type="checkbox" id="isDefaultTermination" checked>
-          <span class="switch-control" aria-hidden="true"></span>
-        </label>
-      </div>
       <label>
         Motivo do distrato
-        <textarea id="terminationReason" placeholder="Informe o motivo do distrato" aria-describedby="terminationReasonError"></textarea>
+        <select id="terminationReason" aria-describedby="terminationReasonError" required>
+          <option value="">Selecione</option>
+          <option>Inadimplência</option>
+          <option>Solicitação do cliente</option>
+          <option>Desistência</option>
+          <option>Dificuldade financeira</option>
+          <option>Insatisfação</option>
+          <option>Falta de interesse</option>
+          <option>Reestruturação interna</option>
+          <option>Outros</option>
+        </select>
+      </label>
+      <label>
+        Tipo de abordagem
+        <select id="terminationApproach" required>
+          <option value="">Selecione</option>
+          <option value="ativa">Ativa - iniciativa da empresa</option>
+          <option value="receptiva">Receptiva - solicitação do cliente</option>
+        </select>
+      </label>
+      <label>
+        Observação
+        <textarea id="terminationObservation" placeholder="Contexto, justificativas e informações complementares"></textarea>
       </label>
       <div class="financial-switches">
         <div class="financial-switch-block">
@@ -430,6 +489,14 @@
               <span class="money-input-prefix">R$</span>
               <input type="text" id="retainedValue" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Valor retido">
             </span>
+          </label>
+          <label class="switch-row compact-switch-row" for="retentionTotal" id="retentionTotalField" hidden>
+            <span>
+              <strong>Retenção total</strong>
+              <small>Preenche com o integralizado, mantendo edição manual.</small>
+            </span>
+            <input type="checkbox" id="retentionTotal">
+            <span class="switch-control" aria-hidden="true"></span>
           </label>
         </div>
         <div class="financial-switch-block">
@@ -450,6 +517,10 @@
           </label>
         </div>
       </div>
+      <label id="terminationEditJustificationField" hidden>
+        Justificativa da edição
+        <textarea id="terminationEditJustification" placeholder="Explique por que este lançamento está sendo alterado"></textarea>
+      </label>
       <p class="field-error" id="terminationReasonError" hidden>Informe o motivo para confirmar o distrato.</p>
       <p class="field-error" id="terminationFinancialError" hidden>Preencha corretamente os valores financeiros selecionados.</p>
       <div class="termination-financial-warning" id="terminationFinancialWarning" role="alert" aria-live="assertive" hidden>
@@ -459,7 +530,7 @@
       </div>
       <div class="modal-actions">
         <button type="button" class="secondary-button" id="cancelTerminationButton">Cancelar</button>
-        <button type="submit" value="confirm" class="danger-button">Confirmar Distrato</button>
+        <button type="submit" value="confirm" class="danger-button" id="confirmTerminationButton">Confirmar Distrato</button>
       </div>
     </form>
   </dialog>

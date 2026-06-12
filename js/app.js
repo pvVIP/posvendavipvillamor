@@ -1,5 +1,5 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260611-1";
-import { DistratoService } from "./distratos.js?v=20260611-1";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260612-3";
+import { DistratoService } from "./distratos.js?v=20260612-3";
 import { parseWorkbookFile } from "./upload.js?v=20260609-4";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
@@ -38,7 +38,10 @@ const state = {
   sortKey: "overdueValue",
   sortDirection: "desc",
   currentUser: "Operador Local",
+  currentUserId: null,
+  currentRole: "operator",
   pendingTermination: [],
+  editingTermination: null,
   terminationTrigger: null,
   pendingImport: null,
   installPrompt: null,
@@ -71,6 +74,8 @@ async function initializeApplication() {
   const settings = await db.getSettings();
   const identity = db.getIdentity?.();
   state.currentUser = identity?.name || settings.currentUser || "Operador Local";
+  state.currentUserId = identity?.id || null;
+  state.currentRole = identity?.role || "operator";
   state.canWrite = identity?.canWrite ?? true;
   document.getElementById("currentUserLabel").textContent = state.currentUser;
   document.getElementById("dataModeLabel").textContent = getDataProviderInfo().label;
@@ -232,8 +237,13 @@ function bindEvents() {
   document.getElementById("terminationReason").addEventListener("input", () => {
     document.getElementById("terminationReasonError").hidden = true;
   });
+  document.getElementById("terminationApproach").addEventListener("change", () => {
+    document.getElementById("terminationReasonError").hidden = true;
+  });
   document.getElementById("hasRetention").addEventListener("change", syncTerminationFinancialFields);
   document.getElementById("hasRefund").addEventListener("change", syncTerminationFinancialFields);
+  document.getElementById("retentionTotal").addEventListener("change", handleRetentionTotalChange);
+  document.getElementById("terminationContractSelect").addEventListener("change", handleTerminationContractSelection);
   ["retainedValue", "refundValue"].forEach((id) => {
     const input = document.getElementById(id);
     input.addEventListener("input", handleMoneyInput);
@@ -249,6 +259,12 @@ function bindEvents() {
     cancelImport();
   });
   document.getElementById("captureButton").addEventListener("click", captureDashboard);
+  document.getElementById("newTerminationButton").addEventListener("click", openTerminationFromHub);
+  document.getElementById("formalTerminationReportButton").addEventListener("click", () => printTerminationReport("formal"));
+  document.getElementById("executiveTerminationReportButton").addEventListener("click", () => printTerminationReport("executive"));
+  document.getElementById("clearTerminationFiltersButton").addEventListener("click", clearTerminationFilters);
+  ["terminationSearch", "terminationReasonFilter", "terminationApproachFilter", "terminationStartDate", "terminationEndDate"]
+    .forEach((id) => document.getElementById(id).addEventListener("input", renderTerminatedTable));
   document.getElementById("changeUserButton").addEventListener("click", changeUser);
   document.getElementById("themeToggle").addEventListener("click", toggleTheme);
   document.getElementById("installAppButton").addEventListener("click", installProgressiveWebApp);
@@ -367,6 +383,7 @@ function switchTab(target) {
   document.getElementById("reversionsPanel").classList.toggle("active", target === "reversions");
   document.getElementById("healthPanel").classList.toggle("active", target === "health");
   document.getElementById("executivePanel").classList.toggle("active", target === "executive");
+  document.querySelector(".global-filters").hidden = !["operational", "executive"].includes(target);
   if (target === "executive") setTimeout(() => renderExecutive(), 80);
 }
 
@@ -603,28 +620,95 @@ function requestBulkTermination() {
   openTerminateDialog();
 }
 
+function openTerminationFromHub() {
+  if (!state.canWrite) {
+    toast("Seu perfil possui acesso somente para leitura.");
+    return;
+  }
+  state.pendingTermination = [];
+  state.editingTermination = null;
+  state.terminationTrigger = document.getElementById("newTerminationButton");
+  openTerminateDialog({ selectContract: true });
+}
+
 function openTerminateDialog() {
+  const selectContract = arguments[0]?.selectContract === true;
+  const editContract = arguments[0]?.editContract || null;
+  state.editingTermination = editContract;
+  const isEditing = Boolean(editContract);
+  const contractField = document.getElementById("terminationContractField");
+  const contractSelect = document.getElementById("terminationContractSelect");
+  contractField.hidden = !selectContract;
+  contractSelect.innerHTML = [
+    '<option value="">Selecione um contrato ativo</option>',
+    ...state.contracts
+      .slice()
+      .sort((a, b) => String(a.primaryClient).localeCompare(String(b.primaryClient), "pt-BR"))
+      .map((contract) => `<option value="${escapeAttr(contract.contractId)}">${escapeHtml(contract.primaryClient)} · ${escapeHtml(contract.contractId)}</option>`),
+  ].join("");
+
   document.getElementById("terminationReason").value = "";
+  document.getElementById("terminationApproach").value = "";
+  document.getElementById("terminationObservation").value = "";
   document.getElementById("terminationDate").value = localDateInputValue();
   document.getElementById("terminationReasonError").hidden = true;
   document.getElementById("terminationFinancialError").hidden = true;
   document.getElementById("terminationFinancialWarning").hidden = true;
   document.getElementById("hasRetention").checked = false;
   document.getElementById("hasRefund").checked = false;
-  document.getElementById("isDefaultTermination").checked = true;
+  document.getElementById("retentionTotal").checked = false;
   document.getElementById("retainedValue").value = "";
   document.getElementById("refundValue").value = "";
+  document.getElementById("terminationEditJustification").value = "";
+  document.getElementById("terminationEditJustificationField").hidden = !isEditing;
+  document.getElementById("terminateDialogTitle").textContent = isEditing ? "Editar distrato" : "Confirmar distrato";
+  document.getElementById("terminateDialogDescription").textContent = isEditing
+    ? "A alteração será registrada no histórico de auditoria."
+    : "Esta operação removerá o contrato dos indicadores ativos.";
+  document.getElementById("confirmTerminationButton").textContent = isEditing ? "Salvar alterações" : "Confirmar Distrato";
+
+  if (isEditing) {
+    state.pendingTermination = [editContract];
+    const reasonSelect = document.getElementById("terminationReason");
+    if (editContract.terminationReason && ![...reasonSelect.options].some((option) => option.value === editContract.terminationReason)) {
+      reasonSelect.add(new Option(editContract.terminationReason, editContract.terminationReason));
+    }
+    document.getElementById("terminationReason").value = editContract.terminationReason || "";
+    document.getElementById("terminationApproach").value = editContract.terminationApproach || "";
+    document.getElementById("terminationObservation").value = editContract.terminationObservation || "";
+    document.getElementById("terminationDate").value = String(editContract.terminatedAt || "").slice(0, 10);
+    document.getElementById("hasRetention").checked = Boolean(editContract.hasRetention);
+    document.getElementById("retainedValue").value = editContract.hasRetention
+      ? formatMoneyForInput(editContract.retainedValue)
+      : "";
+    document.getElementById("retentionTotal").checked = Boolean(editContract.retentionTotal);
+    document.getElementById("hasRefund").checked = Boolean(editContract.hasRefund);
+    document.getElementById("refundValue").value = editContract.hasRefund
+      ? formatMoneyForInput(editContract.refundValue)
+      : "";
+  }
   syncTerminationFinancialFields();
+  renderTerminationContractSummary();
   document.getElementById("terminateDialog").showModal();
 }
 
 async function handleTerminationSubmit(event) {
   event.preventDefault();
   const reason = document.getElementById("terminationReason").value.trim();
+  const approach = document.getElementById("terminationApproach").value;
+  const observation = document.getElementById("terminationObservation").value.trim();
   const terminationDate = document.getElementById("terminationDate").value;
-  if (!reason) {
+  if (!reason || !approach) {
+    document.getElementById("terminationReasonError").textContent = !reason
+      ? "Selecione o motivo para confirmar o distrato."
+      : "Selecione se a abordagem foi ativa ou receptiva.";
     document.getElementById("terminationReasonError").hidden = false;
-    document.getElementById("terminationReason").focus();
+    document.getElementById(!reason ? "terminationReason" : "terminationApproach").focus();
+    return;
+  }
+  if (!state.pendingTermination.length) {
+    document.getElementById("terminationFinancialError").textContent = "Selecione o contrato que será distratado.";
+    document.getElementById("terminationFinancialError").hidden = false;
     return;
   }
   if (!terminationDate) {
@@ -634,7 +718,7 @@ async function handleTerminationSubmit(event) {
   }
   const hasRetention = document.getElementById("hasRetention").checked;
   const hasRefund = document.getElementById("hasRefund").checked;
-  const isDefaultTermination = document.getElementById("isDefaultTermination").checked;
+  const retentionTotal = document.getElementById("retentionTotal").checked;
   const retainedValue = hasRetention ? toNumber(document.getElementById("retainedValue").value) : 0;
   const refundValue = hasRefund ? toNumber(document.getElementById("refundValue").value) : 0;
   const financialError = document.getElementById("terminationFinancialError");
@@ -648,20 +732,52 @@ async function handleTerminationSubmit(event) {
     financialError.hidden = false;
     return;
   }
+  const editJustification = document.getElementById("terminationEditJustification").value.trim();
+  if (state.editingTermination && !editJustification) {
+    financialError.textContent = "Informe a justificativa obrigatória para salvar a edição.";
+    financialError.hidden = false;
+    document.getElementById("terminationEditJustification").focus();
+    return;
+  }
   updateTerminationFinancialWarning();
-  for (const contract of state.pendingTermination) {
-    await distratos.terminate(contract, reason, state.currentUser, {
+
+  if (state.editingTermination) {
+    await distratos.editTermination(state.editingTermination, reason, state.currentUser, {
+      approach,
+      observation,
       hasRetention,
       retainedValue,
+      retentionTotal,
       hasRefund,
       refundValue,
       terminationDate,
-      isDefaultTermination,
+      editJustification,
+    });
+    document.getElementById("terminateDialog").close();
+    state.pendingTermination = [];
+    state.editingTermination = null;
+    await reload();
+    toast("Distrato atualizado e alteração registrada.");
+    return;
+  }
+
+  for (const contract of state.pendingTermination) {
+    await distratos.terminate(contract, reason, state.currentUser, {
+      approach,
+      observation,
+      hasRetention,
+      retainedValue,
+      retentionTotal,
+      hasRefund,
+      refundValue,
+      terminationDate,
+      userId: state.currentUserId,
     });
     state.selected.delete(contract.contractId);
   }
   document.getElementById("terminateDialog").close();
   state.pendingTermination = [];
+  state.editingTermination = null;
   state.terminationTrigger = null;
   await reload();
   toast("Distrato registrado e indicadores atualizados.");
@@ -674,6 +790,7 @@ function cancelTermination() {
   document.getElementById("terminationFinancialError").hidden = true;
   document.getElementById("terminationFinancialWarning").hidden = true;
   state.pendingTermination = [];
+  state.editingTermination = null;
   const trigger = state.terminationTrigger;
   state.terminationTrigger = null;
   trigger?.focus();
@@ -683,11 +800,56 @@ function syncTerminationFinancialFields() {
   const hasRetention = document.getElementById("hasRetention").checked;
   const hasRefund = document.getElementById("hasRefund").checked;
   document.getElementById("retainedValueField").hidden = !hasRetention;
+  document.getElementById("retentionTotalField").hidden = !hasRetention || state.pendingTermination.length !== 1;
   document.getElementById("refundValueField").hidden = !hasRefund;
   document.getElementById("retainedValue").disabled = !hasRetention;
   document.getElementById("refundValue").disabled = !hasRefund;
+  document.getElementById("retentionTotal").disabled = !hasRetention || state.pendingTermination.length !== 1;
+  if (!hasRetention || state.pendingTermination.length !== 1) {
+    document.getElementById("retentionTotal").checked = false;
+  }
   document.getElementById("terminationFinancialError").hidden = true;
   updateTerminationFinancialWarning();
+}
+
+function handleTerminationContractSelection(event) {
+  const contract = state.contracts.find((item) => item.contractId === event.target.value);
+  state.pendingTermination = contract ? [contract] : [];
+  document.getElementById("terminationFinancialError").hidden = true;
+  syncTerminationFinancialFields();
+  renderTerminationContractSummary();
+}
+
+function renderTerminationContractSummary() {
+  const contract = state.pendingTermination.length === 1 ? state.pendingTermination[0] : null;
+  const summary = document.getElementById("terminationContractSummary");
+  if (!contract) {
+    summary.innerHTML = "";
+    summary.hidden = true;
+    return;
+  }
+  summary.hidden = false;
+  summary.innerHTML = `
+    <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
+    <span>Contrato ${escapeHtml(contract.contractId)} · ${escapeHtml(contract.product || "Produto não informado")}</span>
+    <small>Integralizado: ${formatCurrency(contract.effectivePaidValue)}</small>
+  `;
+}
+
+function handleRetentionTotalChange(event) {
+  if (!event.target.checked) return;
+  const contract = state.pendingTermination.length === 1 ? state.pendingTermination[0] : null;
+  if (!contract) return;
+  document.getElementById("hasRetention").checked = true;
+  document.getElementById("retainedValue").value = formatMoneyForInput(contract.effectivePaidValue);
+  syncTerminationFinancialFields();
+}
+
+function formatMoneyForInput(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(toNumber(value));
 }
 
 function updateTerminationFinancialWarning() {
@@ -749,21 +911,46 @@ function localDateInputValue(date = new Date()) {
 }
 
 function renderTerminatedTable() {
-  document.getElementById("terminatedSummary").textContent = `${state.terminated.length} registros`;
-  document.getElementById("terminatedTableBody").innerHTML = state.terminated.map((contract) => `
+  populateTerminationReasonFilter();
+  const contracts = getFilteredTerminations();
+  const totals = calculateTerminationTotals(contracts);
+  document.getElementById("terminatedSummary").textContent = `${contracts.length} de ${state.terminated.length} registros`;
+  document.getElementById("terminationKpis").innerHTML = [
+    metric("Distratos", totals.count, "No período filtrado", "closed"),
+    metric("Recuperado", formatCurrency(totals.retained), "Valor efetivamente retido", "success"),
+    metric("Reembolsado", formatCurrency(totals.refunded), "Valor devolvido ao cliente", "warning"),
+    metric("Integralizado", formatCurrency(totals.integralized), "Antes do distrato"),
+    metric("Retenção média", formatCurrency(totals.averageRetention), "Por distrato"),
+    metric("% de retenção", formatPercent(totals.retentionRate), "Sobre o integralizado"),
+  ].join("");
+  document.getElementById("terminationConsolidated").innerHTML = terminationConsolidatedMarkup(contracts);
+  document.getElementById("terminatedTableBody").innerHTML = contracts.map((contract) => `
     <tr>
       <td><strong>${escapeHtml(contract.contractId)}</strong></td>
       <td>${escapeHtml(contract.primaryClient)}</td>
       <td>${formatCurrency(contract.effectivePaidValue)}</td>
       <td>${formatDate(contract.terminatedAt)}</td>
-      <td><span class="status-badge ${contract.isDefaultTermination === false ? "termination-other" : "termination-default"}">${escapeHtml(contract.terminationClassification || "Inadimplência")}</span></td>
-      <td>${escapeHtml(contract.terminationReason || "-")}</td>
+      <td><span class="status-badge ${contract.isDefaultTermination === false ? "termination-other" : "termination-default"}">${escapeHtml(contract.terminationReason || "Não informado")}</span></td>
+      <td>${approachLabel(contract.terminationApproach)}</td>
       <td>${contract.hasRetention ? formatCurrency(contract.retainedValue) : "Não houve"}</td>
       <td>${contract.hasRefund ? formatCurrency(contract.refundValue) : "Não houve"}</td>
+      <td class="termination-observation-cell">${escapeHtml(contract.terminationObservation || "-")}</td>
       <td>${escapeHtml(contract.terminatedBy || "-")}</td>
-      <td>${state.canWrite ? `<button class="secondary-button compact restore-button" data-id="${escapeAttr(contract.contractId)}">Restaurar</button>` : "-"}</td>
+      <td class="termination-row-actions">
+        <div>
+          ${canEditTermination(contract) ? `<button class="secondary-button compact edit-termination-button" type="button" data-id="${escapeAttr(contract.contractId)}">Editar</button>` : ""}
+          ${state.canWrite ? `<button class="ghost-button compact restore-button" type="button" data-id="${escapeAttr(contract.contractId)}">Restaurar</button>` : ""}
+        </div>
+      </td>
     </tr>
-  `).join("") || emptyRow(10, "Nenhum distrato registrado.");
+  `).join("") || emptyRow(11, "Nenhum distrato encontrado para estes filtros.");
+  document.querySelectorAll(".edit-termination-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const contract = state.terminated.find((item) => item.contractId === button.dataset.id);
+      state.terminationTrigger = button;
+      openTerminateDialog({ editContract: contract });
+    });
+  });
   document.querySelectorAll(".restore-button").forEach((button) => {
     button.addEventListener("click", async () => {
       const contract = state.terminated.find((item) => item.contractId === button.dataset.id);
@@ -772,6 +959,105 @@ function renderTerminatedTable() {
       toast("Contrato restaurado.");
     });
   });
+}
+
+function populateTerminationReasonFilter() {
+  const select = document.getElementById("terminationReasonFilter");
+  const current = select.value || "all";
+  const reasons = byUnique(state.terminated.map((item) => item.terminationReason).filter(Boolean));
+  select.innerHTML = [
+    '<option value="all">Todos</option>',
+    ...reasons.map((reason) => `<option value="${escapeAttr(reason)}">${escapeHtml(reason)}</option>`),
+  ].join("");
+  select.value = [...select.options].some((option) => option.value === current) ? current : "all";
+}
+
+function getFilteredTerminations() {
+  const query = document.getElementById("terminationSearch").value.trim().toLowerCase();
+  const reason = document.getElementById("terminationReasonFilter").value;
+  const approach = document.getElementById("terminationApproachFilter").value;
+  const start = document.getElementById("terminationStartDate").value;
+  const end = document.getElementById("terminationEndDate").value;
+  return state.terminated
+    .filter((contract) => {
+      const haystack = `${contract.primaryClient || ""} ${contract.contractId || ""}`.toLowerCase();
+      const date = String(contract.terminatedAt || "").slice(0, 10);
+      if (query && !haystack.includes(query)) return false;
+      if (reason !== "all" && contract.terminationReason !== reason) return false;
+      if (approach !== "all" && (contract.terminationApproach || "nao_informada") !== approach) return false;
+      if (start && date < start) return false;
+      if (end && date > end) return false;
+      return true;
+    })
+    .sort((a, b) => String(b.terminatedAt || "").localeCompare(String(a.terminatedAt || "")));
+}
+
+function calculateTerminationTotals(contracts) {
+  const integralized = contracts.reduce((total, item) => total + Math.max(0, toNumber(item.effectivePaidValue)), 0);
+  const retained = contracts.reduce((total, item) => total + (item.hasRetention ? Math.max(0, toNumber(item.retainedValue)) : 0), 0);
+  const refunded = contracts.reduce((total, item) => total + (item.hasRefund ? Math.max(0, toNumber(item.refundValue)) : 0), 0);
+  return {
+    count: contracts.length,
+    integralized,
+    retained,
+    refunded,
+    averageRetention: contracts.length ? retained / contracts.length : 0,
+    retentionRate: integralized ? retained / integralized : 0,
+  };
+}
+
+function terminationConsolidatedMarkup(contracts) {
+  const reasonCounts = countTerminationValues(contracts, (item) => item.terminationReason || "Não informado");
+  const approachCounts = countTerminationValues(contracts, (item) => approachLabel(item.terminationApproach));
+  return `
+    <div>
+      <span>Motivos</span>
+      <div class="termination-breakdown-list">${breakdownItems(reasonCounts)}</div>
+    </div>
+    <div>
+      <span>Abordagens</span>
+      <div class="termination-breakdown-list">${breakdownItems(approachCounts)}</div>
+    </div>
+  `;
+}
+
+function countTerminationValues(contracts, selector) {
+  const counts = new Map();
+  contracts.forEach((contract) => {
+    const key = selector(contract);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function breakdownItems(entries) {
+  return entries.length
+    ? entries.map(([label, value]) => `<span><strong>${escapeHtml(label)}</strong>${value}</span>`).join("")
+    : "<small>Nenhum registro no filtro atual.</small>";
+}
+
+function approachLabel(value) {
+  return {
+    ativa: "Ativa",
+    receptiva: "Receptiva",
+    nao_informada: "Não informada",
+  }[value] || "Não informada";
+}
+
+function canEditTermination(contract) {
+  if (!state.canWrite) return false;
+  if (state.currentRole === "admin") return true;
+  if (state.currentUserId) return contract.terminatedById === state.currentUserId;
+  return Boolean(contract.terminatedBy) && contract.terminatedBy === state.currentUser;
+}
+
+function clearTerminationFilters() {
+  ["terminationSearch", "terminationStartDate", "terminationEndDate"].forEach((id) => {
+    document.getElementById(id).value = "";
+  });
+  document.getElementById("terminationReasonFilter").value = "all";
+  document.getElementById("terminationApproachFilter").value = "all";
+  renderTerminatedTable();
 }
 
 function renderHistoricalTerminatedTable() {
@@ -1428,6 +1714,135 @@ function cancelImport() {
 function closeImportDialog() {
   state.pendingImport = null;
   document.getElementById("importDialog").close();
+}
+
+function printTerminationReport(type) {
+  const contracts = getFilteredTerminations();
+  if (!contracts.length) {
+    toast("Não há distratos no filtro atual para gerar o relatório.");
+    return;
+  }
+  const totals = calculateTerminationTotals(contracts);
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    toast("O navegador bloqueou a abertura do relatório. Libere pop-ups para este site.");
+    return;
+  }
+  reportWindow.opener = null;
+  const period = terminationPeriodLabel();
+  const logoUrl = new URL("assets/logo.png", window.location.href).href;
+  const title = type === "formal" ? "Relatório Formal de Distratos" : "Resumo Executivo de Distratos";
+  const body = type === "formal"
+    ? formalTerminationReportMarkup(contracts, totals)
+    : executiveTerminationReportMarkup(contracts, totals);
+  reportWindow.document.write(`<!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8">
+        <title>${escapeHtml(title)}</title>
+        <style>${terminationReportStyles()}</style>
+      </head>
+      <body>
+        <header>
+          <img src="${escapeAttr(logoUrl)}" alt="Villamor">
+          <div><span>VILLAMOR · GESTÃO DA INADIMPLÊNCIA</span><h1>${escapeHtml(title)}</h1><p>${escapeHtml(period)} · Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p></div>
+        </header>
+        ${body}
+        <footer>Documento gerado pelo VILLAMOR INADIMPLÊNCIA · Recuperado corresponde ao valor efetivamente retido.</footer>
+        <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
+      </body>
+    </html>`);
+  reportWindow.document.close();
+}
+
+function formalTerminationReportMarkup(contracts, totals) {
+  return `
+    <section class="summary-grid">
+      ${reportMetric("Distratos", totals.count)}
+      ${reportMetric("Recuperado", formatCurrency(totals.retained))}
+      ${reportMetric("Reembolsado", formatCurrency(totals.refunded))}
+      ${reportMetric("Integralizado", formatCurrency(totals.integralized))}
+      ${reportMetric("Retenção média", formatCurrency(totals.averageRetention))}
+      ${reportMetric("% de retenção", formatPercent(totals.retentionRate))}
+    </section>
+    <table>
+      <thead><tr><th>Contrato / Cliente</th><th>Data</th><th>Motivo</th><th>Abordagem</th><th>Integralizado</th><th>Retido</th><th>Reembolso</th><th>Responsável</th></tr></thead>
+      <tbody>${contracts.map((contract) => `
+        <tr>
+          <td><strong>${escapeHtml(contract.contractId)}</strong><br>${escapeHtml(contract.primaryClient || "-")}</td>
+          <td>${escapeHtml(formatDate(contract.terminatedAt))}</td>
+          <td>${escapeHtml(contract.terminationReason || "Não informado")}<small>${escapeHtml(contract.terminationObservation || "")}</small></td>
+          <td>${escapeHtml(approachLabel(contract.terminationApproach))}</td>
+          <td>${escapeHtml(formatCurrency(contract.effectivePaidValue))}</td>
+          <td>${escapeHtml(contract.hasRetention ? formatCurrency(contract.retainedValue) : "-")}</td>
+          <td>${escapeHtml(contract.hasRefund ? formatCurrency(contract.refundValue) : "-")}</td>
+          <td>${escapeHtml(contract.terminatedBy || "-")}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+    ${reportBreakdowns(contracts)}
+  `;
+}
+
+function executiveTerminationReportMarkup(contracts, totals) {
+  const reasons = countTerminationValues(contracts, (item) => item.terminationReason || "Não informado");
+  const approaches = countTerminationValues(contracts, (item) => approachLabel(item.terminationApproach));
+  const largestRetention = contracts
+    .filter((item) => item.hasRetention)
+    .sort((a, b) => toNumber(b.retainedValue) - toNumber(a.retainedValue))[0];
+  const receptive = contracts.filter((item) => item.terminationApproach === "receptiva").length;
+  return `
+    <section class="hero-summary">
+      <div><span>VISÃO DO PERÍODO</span><h2>${totals.count} distratos acompanhados</h2><p>${formatPercent(contracts.length ? receptive / contracts.length : 0)} tiveram origem receptiva.</p></div>
+      <strong>${escapeHtml(formatCurrency(totals.retained))}<small>recuperado por retenção</small></strong>
+    </section>
+    <section class="summary-grid executive">
+      ${reportMetric("Integralizado", formatCurrency(totals.integralized))}
+      ${reportMetric("Reembolsado", formatCurrency(totals.refunded))}
+      ${reportMetric("Retenção média", formatCurrency(totals.averageRetention))}
+      ${reportMetric("Taxa de retenção", formatPercent(totals.retentionRate))}
+    </section>
+    <section class="report-columns">
+      <article><h3>Principais motivos</h3>${reportBars(reasons, contracts.length)}</article>
+      <article><h3>Origem da abordagem</h3>${reportBars(approaches, contracts.length)}</article>
+    </section>
+    <section class="attention-box">
+      <h3>Destaques do período</h3>
+      <p>Motivo mais recorrente: <strong>${escapeHtml(reasons[0]?.[0] || "Não informado")}</strong>, com ${reasons[0]?.[1] || 0} registros.</p>
+      <p>Maior retenção registrada: <strong>${escapeHtml(largestRetention ? formatCurrency(largestRetention.retainedValue) : "Não houve")}</strong>${largestRetention ? ` no contrato ${escapeHtml(largestRetention.contractId)}.` : "."}</p>
+      <p>Ponto de atenção: ${totals.refunded > totals.retained ? "o total reembolsado supera o recuperado por retenções." : "o recuperado por retenções é igual ou superior aos reembolsos do período."}</p>
+    </section>
+  `;
+}
+
+function reportMetric(label, value) {
+  return `<article class="report-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
+}
+
+function reportBreakdowns(contracts) {
+  const reasons = countTerminationValues(contracts, (item) => item.terminationReason || "Não informado");
+  const approaches = countTerminationValues(contracts, (item) => approachLabel(item.terminationApproach));
+  return `<section class="report-columns"><article><h3>Quantidade por motivo</h3>${reportBars(reasons, contracts.length)}</article><article><h3>Quantidade por abordagem</h3>${reportBars(approaches, contracts.length)}</article></section>`;
+}
+
+function reportBars(entries, total) {
+  return entries.map(([label, value]) => `
+    <div class="report-bar"><div><span>${escapeHtml(label)}</span><strong>${value}</strong></div><i style="width:${total ? (value / total) * 100 : 0}%"></i></div>
+  `).join("") || "<p>Sem dados.</p>";
+}
+
+function terminationPeriodLabel() {
+  const start = document.getElementById("terminationStartDate").value;
+  const end = document.getElementById("terminationEndDate").value;
+  if (start && end) return `Período de ${formatDate(start)} a ${formatDate(end)}`;
+  if (start) return `A partir de ${formatDate(start)}`;
+  if (end) return `Até ${formatDate(end)}`;
+  return "Todos os lançamentos a partir de 07/05/2026";
+}
+
+function terminationReportStyles() {
+  return `
+    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#29191e;font:12px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #a62552}header img{width:64px;height:64px;border-radius:8px;object-fit:cover}header span{font-size:10px;font-weight:700;color:#a62552}h1{margin:3px 0;font-size:24px}header p{margin:0;color:#6f6267}.summary-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:16px 0}.summary-grid.executive{grid-template-columns:repeat(4,1fr)}.report-metric{padding:12px;border:1px solid #dfd5d9;border-bottom:4px solid #a62552;border-radius:6px}.report-metric span{display:block;color:#75666c;font-size:10px;text-transform:uppercase}.report-metric strong{display:block;margin-top:6px;font-size:17px}table{width:100%;border-collapse:collapse;font-size:9px}th{padding:7px;background:#3c2029;color:#fff;text-align:left}td{padding:7px;border-bottom:1px solid #e5dde0;vertical-align:top}td small{display:block;margin-top:3px;color:#766970}.report-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.report-columns article,.attention-box,.hero-summary{padding:16px;border:1px solid #ded3d7;border-radius:7px}h3{margin:0 0 12px}.report-bar{margin:9px 0}.report-bar div{display:flex;justify-content:space-between}.report-bar i{display:block;height:5px;margin-top:4px;border-radius:3px;background:linear-gradient(90deg,#98244c,#e25c72)}.hero-summary{display:flex;justify-content:space-between;align-items:center;margin:16px 0;background:#342027;color:#fff}.hero-summary span{font-size:10px;color:#f09bad}.hero-summary h2{margin:5px 0;font-size:24px}.hero-summary p{margin:0;color:#dacbd0}.hero-summary>strong{font-size:28px;color:#ffb3c2;text-align:right}.hero-summary>strong small{display:block;font-size:10px;color:#fff}.attention-box{margin-top:16px;background:#fff8fa}.attention-box p{margin:8px 0}footer{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;color:#776a6f;font-size:9px;text-align:center}@media print{button{display:none}}`;
 }
 
 async function captureDashboard() {

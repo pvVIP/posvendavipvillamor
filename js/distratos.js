@@ -15,7 +15,7 @@ export class DistratoService {
     const terminatedAt = financial.terminationDate
       ? `${financial.terminationDate}T12:00:00`
       : now;
-    const isDefaultTermination = financial.isDefaultTermination !== false;
+    const isDefaultTermination = reason === "Inadimplência";
     const terminationClassification = isDefaultTermination ? "Inadimplência" : "Outros motivos";
     const terminationStatus = isDefaultTermination ? STATUS.TERMINATED : STATUS.TERMINATED_OTHER;
     const terminated = {
@@ -25,12 +25,16 @@ export class DistratoService {
       isDefaultTermination,
       terminationClassification,
       terminationReason: reason,
+      terminationObservation: financial.observation || "",
+      terminationApproach: financial.approach || "nao_informada",
       terminatedAt,
       terminatedBy: user,
+      terminatedById: financial.userId || null,
       lastUpdatedAt: now,
       localUser: user,
       hasRetention: Boolean(financial.hasRetention),
       retainedValue: financial.hasRetention ? Number(financial.retainedValue || 0) : 0,
+      retentionTotal: Boolean(financial.retentionTotal),
       hasRefund: Boolean(financial.hasRefund),
       refundValue: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
     };
@@ -45,11 +49,66 @@ export class DistratoService {
       previousStatus: contract.appStatus,
       nextStatus: terminationStatus,
       terminationClassification,
+      terminationObservation: terminated.terminationObservation,
+      terminationApproach: terminated.terminationApproach,
       hasRetention: terminated.hasRetention,
       retainedValue: terminated.retainedValue,
+      retentionTotal: terminated.retentionTotal,
       hasRefund: terminated.hasRefund,
       refundValue: terminated.refundValue,
       terminatedAt,
+    });
+  }
+
+  async editTermination(contract, reason, user, financial = {}) {
+    if (typeof this.database.editTermination === "function") {
+      await this.database.editTermination(contract.contractId, reason, financial);
+      return;
+    }
+
+    const now = todayIso();
+    const previous = {
+      terminationReason: contract.terminationReason,
+      terminationObservation: contract.terminationObservation,
+      terminationApproach: contract.terminationApproach,
+      terminatedAt: contract.terminatedAt,
+      retainedValue: contract.retainedValue,
+      refundValue: contract.refundValue,
+    };
+    const isDefaultTermination = reason === "Inadimplência";
+    const historyEntry = {
+      editedAt: now,
+      editedBy: user,
+      justification: financial.editJustification,
+      previous,
+    };
+    const updated = {
+      ...contract,
+      terminationReason: reason,
+      terminationObservation: financial.observation || "",
+      terminationApproach: financial.approach,
+      terminationClassification: isDefaultTermination ? "Inadimplência" : "Outros motivos",
+      isDefaultTermination,
+      terminatedAt: financial.terminationDate ? `${financial.terminationDate}T12:00:00` : contract.terminatedAt,
+      hasRetention: Boolean(financial.hasRetention),
+      retainedValue: financial.hasRetention ? Number(financial.retainedValue || 0) : 0,
+      retentionTotal: Boolean(financial.retentionTotal),
+      hasRefund: Boolean(financial.hasRefund),
+      refundValue: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
+      lastEditedAt: now,
+      lastEditedBy: user,
+      lastEditJustification: financial.editJustification,
+      terminationEditHistory: [...(contract.terminationEditHistory || []), historyEntry],
+      lastUpdatedAt: now,
+    };
+    await this.database.putTerminated(updated);
+    await this.database.addAuditLog({
+      contractId: contract.contractId,
+      action: "edit-termination",
+      user,
+      justification: financial.editJustification,
+      previous,
+      next: updated,
     });
   }
 
@@ -63,13 +122,21 @@ export class DistratoService {
       ...contract,
       manualStatus: null,
       terminationReason: null,
+      terminationObservation: null,
+      terminationApproach: null,
       terminatedAt: null,
       terminatedBy: null,
+      terminatedById: null,
       previousStatus: null,
       hasRetention: false,
       retainedValue: 0,
+      retentionTotal: false,
       hasRefund: false,
       refundValue: 0,
+      terminationEditHistory: [],
+      lastEditedAt: null,
+      lastEditedBy: null,
+      lastEditJustification: null,
       lastUpdatedAt: todayIso(),
       localUser: user,
     };
