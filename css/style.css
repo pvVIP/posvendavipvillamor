@@ -2192,8 +2192,12 @@ body {
   transition: transform 140ms ease;
 }
 
-.skip-link:focus {
+.skip-link:focus-visible {
   transform: translateY(0);
+}
+
+.skip-link:not(:focus-visible) {
+  transform: translateY(-160%);
 }
 
 :where(button, input, select, textarea, [tabindex]):focus-visible {
@@ -2466,27 +2470,91 @@ textarea:focus {
 }
 
 .metric-card-success::after {
-  height: 4px;
-  background: var(--green);
-  box-shadow: none;
+  height: 6px;
+  background: linear-gradient(90deg, #04794a 0%, #12bd70 52%, #7af0b5 100%);
+  box-shadow:
+    0 -2px 9px rgba(18, 189, 112, 0.78),
+    0 -7px 20px rgba(18, 189, 112, 0.28);
 }
 
 .metric-card-warning::after {
-  height: 4px;
-  background: var(--amber);
-  box-shadow: none;
+  height: 6px;
+  background: linear-gradient(90deg, #a96c00 0%, #efad17 52%, #ffe189 100%);
+  box-shadow:
+    0 -2px 9px rgba(239, 173, 23, 0.82),
+    0 -7px 20px rgba(239, 173, 23, 0.30);
 }
 
 .metric-card-danger::after {
-  height: 4px;
-  background: var(--red);
-  box-shadow: none;
+  height: 6px;
+  background: linear-gradient(90deg, #9b1839 0%, #e23e62 52%, #ff9cad 100%);
+  box-shadow:
+    0 -2px 9px rgba(226, 62, 98, 0.84),
+    0 -7px 20px rgba(226, 62, 98, 0.32);
 }
 
 .metric-card-closed::after {
-  height: 4px;
-  background: #727982;
-  box-shadow: none;
+  height: 6px;
+  background: linear-gradient(90deg, #676d74 0%, #aeb3b4 54%, #fff8e8 100%);
+  box-shadow:
+    0 -2px 9px rgba(222, 222, 211, 0.72),
+    0 -7px 20px rgba(255, 248, 232, 0.22);
+}
+
+#executiveKpis .metric-card-success {
+  border-color: rgba(18, 189, 112, 0.36);
+}
+
+#executiveKpis .metric-card-danger {
+  border-color: rgba(226, 62, 98, 0.38);
+}
+
+#executiveKpis .metric-card-warning {
+  border-color: rgba(239, 173, 23, 0.38);
+}
+
+#executiveKpis .metric-card-closed {
+  border-color: rgba(174, 179, 180, 0.42);
+}
+
+#executiveKpis .metric-card-success > span {
+  color: #078955;
+  text-shadow: 0 0 12px rgba(18, 189, 112, 0.38);
+}
+
+#executiveKpis .metric-card-danger > span {
+  color: #c6294e;
+  text-shadow: 0 0 12px rgba(226, 62, 98, 0.38);
+}
+
+#executiveKpis .metric-card-warning > span {
+  color: #a96c00;
+  text-shadow: 0 0 12px rgba(239, 173, 23, 0.36);
+}
+
+#executiveKpis .metric-card-closed > span {
+  color: #666c72;
+  text-shadow: 0 0 12px rgba(174, 179, 180, 0.34);
+}
+
+[data-theme="dark"] #executiveKpis .metric-card-success > span {
+  color: #65efaa;
+  text-shadow: 0 0 14px rgba(18, 189, 112, 0.66);
+}
+
+[data-theme="dark"] #executiveKpis .metric-card-danger > span {
+  color: #ff829a;
+  text-shadow: 0 0 14px rgba(226, 62, 98, 0.68);
+}
+
+[data-theme="dark"] #executiveKpis .metric-card-warning > span {
+  color: #ffd266;
+  text-shadow: 0 0 14px rgba(239, 173, 23, 0.62);
+}
+
+[data-theme="dark"] #executiveKpis .metric-card-closed > span {
+  color: #fff8e8;
+  text-shadow: 0 0 14px rgba(255, 248, 232, 0.42);
 }
 
 .metric-card strong {
