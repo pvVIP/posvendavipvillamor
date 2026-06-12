@@ -1,10 +1,10 @@
-const CACHE_NAME = "villamor-inadimplencia-v6";
+const CACHE_NAME = "villamor-inadimplencia-v7";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./offline.html",
   "./manifest.webmanifest",
-  "./css/style.css?v=20260611-1",
+  "./css/style.css?v=20260612-1",
   "./js/app.js?v=20260611-1",
   "./js/config.js",
   "./js/data-provider.js?v=20260611-1",
