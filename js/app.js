@@ -1,5 +1,5 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260612-4";
-import { DistratoService } from "./distratos.js?v=20260612-4";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260612-5";
+import { DistratoService } from "./distratos.js?v=20260612-5";
 import { parseWorkbookFile } from "./upload.js?v=20260609-4";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
@@ -7,9 +7,7 @@ import {
   STATUS,
   byUnique,
   debounce,
-  downloadBlob,
   enrichContract,
-  filenameDate,
   formatCurrency,
   formatDate,
   formatPercent,
@@ -19,6 +17,7 @@ import {
 import {
   calculateKpis,
   getActiveContracts,
+  getAgingData,
   groupByCategory,
   getHeatmapData,
   getTopDefaulted,
@@ -258,7 +257,7 @@ function bindEvents() {
     event.preventDefault();
     cancelImport();
   });
-  document.getElementById("captureButton").addEventListener("click", captureDashboard);
+  document.getElementById("executiveReportButton").addEventListener("click", printExecutivePortfolioReport);
   document.getElementById("newTerminationButton").addEventListener("click", openTerminationFromHub);
   document.getElementById("formalTerminationReportButton").addEventListener("click", () => printTerminationReport("formal"));
   document.getElementById("executiveTerminationReportButton").addEventListener("click", () => printTerminationReport("executive"));
@@ -1758,9 +1757,9 @@ function printTerminationReport(type) {
 function formalTerminationReportMarkup(contracts, totals) {
   return `
     <section class="summary-grid">
-      ${reportMetric("Distratos", totals.count)}
-      ${reportMetric("Recuperado", formatCurrency(totals.retained))}
-      ${reportMetric("Reembolsado", formatCurrency(totals.refunded))}
+      ${reportMetric("Distratos", totals.count, "closed")}
+      ${reportMetric("Recuperado", formatCurrency(totals.retained), "recovered")}
+      ${reportMetric("Reembolsado", formatCurrency(totals.refunded), "refund")}
       ${reportMetric("Integralizado", formatCurrency(totals.integralized))}
       ${reportMetric("Retenção média", formatCurrency(totals.averageRetention))}
       ${reportMetric("% de retenção", formatPercent(totals.retentionRate))}
@@ -1798,9 +1797,9 @@ function executiveTerminationReportMarkup(contracts, totals) {
     </section>
     <section class="summary-grid executive">
       ${reportMetric("Integralizado", formatCurrency(totals.integralized))}
-      ${reportMetric("Reembolsado", formatCurrency(totals.refunded))}
+      ${reportMetric("Reembolsado", formatCurrency(totals.refunded), "refund")}
       ${reportMetric("Retenção média", formatCurrency(totals.averageRetention))}
-      ${reportMetric("Taxa de retenção", formatPercent(totals.retentionRate))}
+      ${reportMetric("Taxa de retenção", formatPercent(totals.retentionRate), "recovered")}
     </section>
     <section class="report-columns">
       <article><h3>Principais motivos</h3>${reportBars(reasons, contracts.length)}</article>
@@ -1815,8 +1814,9 @@ function executiveTerminationReportMarkup(contracts, totals) {
   `;
 }
 
-function reportMetric(label, value) {
-  return `<article class="report-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></article>`;
+function reportMetric(label, value, tone = "", helper = "") {
+  const toneClass = tone ? ` tone-${tone}` : "";
+  return `<article class="report-metric${toneClass}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${helper ? `<small>${escapeHtml(helper)}</small>` : ""}</article>`;
 }
 
 function reportBreakdowns(contracts) {
@@ -1842,31 +1842,91 @@ function terminationPeriodLabel() {
 
 function terminationReportStyles() {
   return `
-    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#29191e;font:12px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #a62552}header img{width:64px;height:64px;border-radius:8px;object-fit:cover}header span{font-size:10px;font-weight:700;color:#a62552}h1{margin:3px 0;font-size:24px}header p{margin:0;color:#6f6267}.summary-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:16px 0}.summary-grid.executive{grid-template-columns:repeat(4,1fr)}.report-metric{padding:12px;border:1px solid #dfd5d9;border-bottom:4px solid #a62552;border-radius:6px}.report-metric span{display:block;color:#75666c;font-size:10px;text-transform:uppercase}.report-metric strong{display:block;margin-top:6px;font-size:17px}table{width:100%;border-collapse:collapse;font-size:9px}th{padding:7px;background:#3c2029;color:#fff;text-align:left}td{padding:7px;border-bottom:1px solid #e5dde0;vertical-align:top}td small{display:block;margin-top:3px;color:#766970}.report-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.report-columns article,.attention-box,.hero-summary{padding:16px;border:1px solid #ded3d7;border-radius:7px}h3{margin:0 0 12px}.report-bar{margin:9px 0}.report-bar div{display:flex;justify-content:space-between}.report-bar i{display:block;height:5px;margin-top:4px;border-radius:3px;background:linear-gradient(90deg,#98244c,#e25c72)}.hero-summary{display:flex;justify-content:space-between;align-items:center;margin:16px 0;background:#342027;color:#fff}.hero-summary span{font-size:10px;color:#f09bad}.hero-summary h2{margin:5px 0;font-size:24px}.hero-summary p{margin:0;color:#dacbd0}.hero-summary>strong{font-size:28px;color:#ffb3c2;text-align:right}.hero-summary>strong small{display:block;font-size:10px;color:#fff}.attention-box{margin-top:16px;background:#fff8fa}.attention-box p{margin:8px 0}footer{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;color:#776a6f;font-size:9px;text-align:center}@media print{button{display:none}}`;
+    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;color:#29191e;font:12px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #a62552}header img{width:64px;height:64px;border-radius:8px;object-fit:cover}header span{font-size:10px;font-weight:700;color:#a62552}h1{margin:3px 0;font-size:24px}header p{margin:0;color:#6f6267}.summary-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:16px 0}.summary-grid.executive{grid-template-columns:repeat(4,1fr)}.report-metric{padding:12px;border:1px solid #dfd5d9;border-bottom:4px solid #a62552;border-radius:6px;background:#fff}.report-metric span{display:block;color:#8f2349;font-size:10px;font-weight:700;text-transform:uppercase}.report-metric strong{display:block;margin-top:6px;font-size:17px}.report-metric small{display:block;margin-top:5px;color:#75666c;font-size:9px}.report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}.report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}.report-metric.tone-closed{border-color:#d3d5d7;border-bottom-color:#7d858c;background:linear-gradient(135deg,#f1f2f2,#fffdf6)}.report-metric.tone-closed span{color:#596168}table{width:100%;border-collapse:collapse;font-size:9px}th{padding:7px;background:#3c2029;color:#fff;text-align:left}td{padding:7px;border-bottom:1px solid #e5dde0;vertical-align:top}td small{display:block;margin-top:3px;color:#766970}.report-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.report-columns article,.attention-box,.hero-summary{padding:16px;border:1px solid #ded3d7;border-radius:7px}h3{margin:0 0 12px}.report-bar{margin:9px 0}.report-bar div{display:flex;justify-content:space-between}.report-bar i{display:block;height:5px;margin-top:4px;border-radius:3px;background:linear-gradient(90deg,#98244c,#e25c72)}.hero-summary{display:flex;justify-content:space-between;align-items:center;margin:16px 0;background:#342027;color:#fff}.hero-summary span{font-size:10px;color:#f09bad}.hero-summary h2{margin:5px 0;font-size:24px}.hero-summary p{margin:0;color:#dacbd0}.hero-summary>strong{font-size:28px;color:#70d9a6;text-align:right}.hero-summary>strong small{display:block;font-size:10px;color:#fff}.attention-box{margin-top:16px;background:#fff8fa}.attention-box p{margin:8px 0}footer{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;color:#776a6f;font-size:9px;text-align:center}@media print{button{display:none}}`;
 }
 
-async function captureDashboard() {
-  switchTab("executive");
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  if (!window.html2canvas) {
-    toast("Biblioteca de captura ainda não carregou.");
+function printExecutivePortfolioReport() {
+  const active = getActiveContracts(state.filtered);
+  const terminations = getProductionTerminations();
+  const kpis = calculateKpis(active, terminations);
+  const aging = getAgingData(active);
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    toast("O navegador bloqueou a abertura do relatório. Libere pop-ups para este site.");
     return;
   }
-  const area = document.getElementById("dashboardCaptureArea");
-  document.body.classList.add("is-capturing");
-  try {
-    const darkMode = document.documentElement.dataset.theme === "dark";
-    const canvas = await window.html2canvas(area, {
-      scale: 2,
-      backgroundColor: darkMode ? "#171214" : "#f7eef2",
-      useCORS: true,
-    });
-    canvas.toBlob((blob) => {
-      downloadBlob(blob, `Dashboard_Inadimplencia_${filenameDate()}.jpg`);
-    }, "image/jpeg", 0.95);
-  } finally {
-    document.body.classList.remove("is-capturing");
-  }
+  reportWindow.opener = null;
+  const logoUrl = new URL("assets/logo.png", window.location.href).href;
+  const complianceRate = kpis.totalActive ? kpis.totalCurrent / kpis.totalActive : 0;
+  reportWindow.document.write(`<!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8">
+        <title>Relatório Executivo da Inadimplência</title>
+        <style>${executivePortfolioReportStyles()}</style>
+      </head>
+      <body>
+        <header>
+          <img src="${escapeAttr(logoUrl)}" alt="Villamor">
+          <div><span>VILLAMOR · GESTÃO DA INADIMPLÊNCIA</span><h1>Relatório Executivo da Inadimplência</h1><p>Visão da carteira filtrada · Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p></div>
+        </header>
+        <section class="executive-metrics">
+          ${reportMetric("Contratos ativos", kpis.totalActive, "", "Carteira filtrada")}
+          ${reportMetric("Adimplentes", kpis.totalCurrent, "recovered", "Inclui quitados")}
+          ${reportMetric("Inadimplentes", kpis.totalDefaulted, "danger", "90+ dias")}
+          ${reportMetric("Em atraso", kpis.totalLate, "refund", "Até 89 dias")}
+          ${reportMetric("Distratados", kpis.totalTerminated, "closed", "A partir de 07/05/2026")}
+          ${reportMetric("Recuperável", formatCurrency(kpis.recoverableValue), "", "Integralizado dos inadimplentes")}
+          ${reportMetric("Carteira", formatCurrency(kpis.totalPortfolio), "", "Valor total")}
+          ${reportMetric("Inadimplência", formatCurrency(kpis.totalOverdue), "danger", "Valor atrasado")}
+          ${reportMetric("% inadimplência", formatPercent(kpis.defaultRate), "", "Sobre carteira")}
+          ${reportMetric("Ticket médio", formatCurrency(kpis.averageTicket), "", "Contratos ativos")}
+          ${reportMetric("% distratos", formatPercent(kpis.terminationRate), "closed", "Total acompanhado")}
+          ${reportMetric("Aging médio", `${Math.round(kpis.averageAging)} dias`, "", `${kpis.aging90Plus} contratos 90+ dias`)}
+        </section>
+        ${executiveProgressMarkup(complianceRate, kpis.totalCurrent, kpis.totalActive)}
+        ${executiveAgingMarkup(aging)}
+        <footer>Documento gerado pelo VILLAMOR INADIMPLÊNCIA · Indicadores respeitam os filtros ativos no momento da emissão.</footer>
+        <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
+      </body>
+    </html>`);
+  reportWindow.document.close();
+}
+
+function executiveProgressMarkup(rate, current, total) {
+  const safeRate = Math.max(0, Math.min(1, rate));
+  return `
+    <section class="portfolio-progress">
+      <div>
+        <span>PROGRESSO DA CARTEIRA</span>
+        <h2>Índice de adimplência</h2>
+        <p>${current} contratos adimplentes ou quitados de ${total} contratos ativos.</p>
+      </div>
+      <strong>${escapeHtml(formatPercent(safeRate))}</strong>
+      <div class="progress-track"><i style="width:${safeRate * 100}%"></i></div>
+    </section>`;
+}
+
+function executiveAgingMarkup(rows) {
+  const max = Math.max(...rows.map((row) => row.value), 1);
+  return `
+    <section class="aging-report">
+      <div class="aging-heading"><div><span>EXPOSIÇÃO POR TEMPO</span><h2>Aging List</h2></div><small>Quantidade de contratos com valor em atraso</small></div>
+      <div class="aging-bars">
+        ${rows.map((row) => `
+          <article>
+            <strong>${row.value}</strong>
+            <div class="aging-column"><i style="height:${(row.value / max) * 100}%"></i></div>
+            <span>${escapeHtml(row.label)}</span>
+            <small>${escapeHtml(formatCurrency(row.amount))}</small>
+          </article>`).join("")}
+      </div>
+    </section>`;
+}
+
+function executivePortfolioReportStyles() {
+  return `
+    @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;color:#22262b;font:11px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:14px;padding-bottom:11px;border-bottom:3px solid #a62552}header img{width:58px;height:58px;border-radius:7px;object-fit:cover}header span,.portfolio-progress span,.aging-heading span{font-size:9px;font-weight:800;color:#a62552}h1{margin:3px 0;font-size:22px}header p,.portfolio-progress p{margin:0;color:#687078}.executive-metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin:12px 0}.report-metric{min-height:72px;padding:9px;border:1px solid #d9dde1;border-bottom:4px solid #a62552;border-radius:5px;background:#fff}.report-metric span{display:block;color:#8f2349;font-size:8px;font-weight:800;text-transform:uppercase}.report-metric strong{display:block;margin-top:5px;font-size:15px}.report-metric small{display:block;margin-top:4px;color:#667079;font-size:8px}.report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}.report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}.report-metric.tone-danger{border-color:#efbdc7;border-bottom-color:#c72d4c;background:#fff4f6}.report-metric.tone-danger span{color:#b51f40}.report-metric.tone-closed{border-color:#d3d5d7;border-bottom-color:#7d858c;background:linear-gradient(135deg,#f1f2f2,#fffdf6)}.report-metric.tone-closed span{color:#596168}.portfolio-progress{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:12px 14px;border:1px solid #d8dde1;border-radius:6px;background:#f8fafb}.portfolio-progress h2,.aging-heading h2{margin:3px 0;font-size:17px}.portfolio-progress>strong{align-self:center;color:#087a49;font-size:25px}.progress-track{grid-column:1/-1;height:11px;overflow:hidden;border-radius:6px;background:#dfe4e7}.progress-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#087a49,#45d79a)}.aging-report{margin-top:10px;padding:11px 14px;border:1px solid #d8dde1;border-radius:6px}.aging-heading{display:flex;align-items:flex-end;justify-content:space-between}.aging-heading small{color:#687078}.aging-bars{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;height:140px;margin-top:8px;padding:4px 18px 0;border-bottom:1px solid #cfd5d9;background:repeating-linear-gradient(to top,transparent 0,transparent 27px,#e8ebed 28px)}.aging-bars article{display:grid;grid-template-rows:15px 1fr 15px 13px;min-width:0;text-align:center}.aging-bars strong{font-size:11px}.aging-column{display:flex;align-items:flex-end;justify-content:center;height:92px}.aging-column i{display:block;width:62%;min-height:2px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#e36767,#c74451)}.aging-bars span{font-weight:700}.aging-bars small{overflow:hidden;color:#687078;font-size:7px;text-overflow:ellipsis;white-space:nowrap}footer{margin-top:9px;padding-top:6px;border-top:1px solid #ddd;color:#737b82;font-size:8px;text-align:center}@media print{button{display:none}}`;
 }
 
 async function changeUser() {

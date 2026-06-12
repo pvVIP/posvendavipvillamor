@@ -1041,7 +1041,7 @@ textarea:focus {
   min-width: 900px;
 }
 
-.dashboard-capture-area {
+.dashboard-report-area {
   padding: 0 0 18px;
 }
 
@@ -1614,10 +1614,6 @@ canvas {
   background: var(--brand-deep);
   color: #fff;
   box-shadow: var(--shadow);
-}
-
-.is-capturing .global-filters {
-  display: none;
 }
 
 [data-theme="dark"] {

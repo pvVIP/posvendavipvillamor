@@ -14,11 +14,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260612-4">
+  <link rel="stylesheet" href="css/style.css?v=20260612-5">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" defer></script>
-  <script src="js/app.js?v=20260612-4" type="module"></script>
+  <script src="js/app.js?v=20260612-5" type="module"></script>
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -115,7 +114,7 @@
             Atualização
             <input type="file" id="uploadInput" accept=".xlsx,.xls" aria-label="Selecionar planilha para atualização">
           </label>
-          <button class="primary-button" id="captureButton" type="button">Captura</button>
+          <button class="primary-button" id="executiveReportButton" type="button">Relatório diretoria</button>
         </div>
       </header>
 
@@ -367,7 +366,7 @@
       </section>
 
       <section class="tab-panel" id="executivePanel" role="region" aria-labelledby="executiveTab">
-        <div id="dashboardCaptureArea" class="dashboard-capture-area">
+        <div class="dashboard-report-area">
           <div class="section-header performance-section-header">
             <div class="performance-meter" id="executivePerformance"></div>
             <span id="dashboardDate"></span>
