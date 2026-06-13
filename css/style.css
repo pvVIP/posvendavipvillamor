@@ -2466,18 +2466,22 @@ textarea:disabled {
 }
 
 .app-shell {
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: 288px minmax(0, 1fr);
+  transition: grid-template-columns 180ms ease;
 }
 
 .sidebar {
   padding: 18px 16px;
   background: #29282b;
   box-shadow: 4px 0 18px rgba(25, 24, 27, 0.14);
+  overflow-x: hidden;
+  transition: padding 180ms ease;
 }
 
 .brand {
   gap: 11px;
   margin-bottom: 22px;
+  min-width: 0;
 }
 
 .brand-logo {
@@ -2486,13 +2490,58 @@ textarea:disabled {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
 }
 
-.brand strong {
-  font-size: 17px;
+.brand-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.brand strong.brand-main-title {
+  width: fit-content;
+  max-width: 100%;
+  color: #ff719c;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.15;
+  white-space: nowrap;
+  background: linear-gradient(90deg, #ff8b83 0%, #ff4f91 42%, #c82772 72%, #ffae85 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 6px rgba(255, 75, 139, 0.58)) drop-shadow(0 0 12px rgba(211, 39, 111, 0.24));
 }
 
 .brand span {
   color: rgba(255, 255, 255, 0.68);
   font-size: 12px;
+  font-weight: 400;
+}
+
+.navigation-toggle {
+  display: grid;
+  flex: 0 0 32px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.navigation-toggle:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.navigation-toggle-icon::before {
+  content: "\2039";
+  display: block;
+  font-size: 25px;
+  font-weight: 500;
+  line-height: 1;
+  transform: translateY(-1px);
 }
 
 .nav-tabs {
@@ -3604,6 +3653,117 @@ textarea:focus {
   .termination-filters label:first-child,
   .termination-filters .ghost-button {
     grid-column: auto;
+  }
+}
+
+@media (min-width: 981px) {
+  body.navigation-collapsed .app-shell {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  body.navigation-collapsed .sidebar {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  body.navigation-collapsed .brand {
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  body.navigation-collapsed .brand-logo {
+    width: 48px;
+    height: 48px;
+  }
+
+  body.navigation-collapsed .brand-copy,
+  body.navigation-collapsed .sidebar-card,
+  body.navigation-collapsed .sidebar-footer {
+    display: none;
+  }
+
+  body.navigation-collapsed .navigation-toggle {
+    margin-left: 0;
+  }
+
+  body.navigation-collapsed .navigation-toggle-icon::before {
+    content: "\203A";
+  }
+
+  body.navigation-collapsed .nav-tab {
+    justify-content: center;
+    min-height: 44px;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  body.navigation-collapsed .nav-label {
+    display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .brand {
+    margin-bottom: 10px;
+  }
+
+  .brand-logo {
+    width: 50px;
+    height: 50px;
+  }
+
+  .brand strong.brand-main-title {
+    font-size: 16px;
+  }
+
+  .navigation-toggle-icon::before {
+    content: "\2303";
+    font-size: 19px;
+    transform: translateY(2px);
+  }
+
+  .nav-tabs,
+  .sidebar-footer {
+    max-height: 180px;
+    opacity: 1;
+    transform: translateY(0);
+    transition: max-height 180ms ease, margin 180ms ease, padding 180ms ease, opacity 120ms ease, transform 180ms ease;
+  }
+
+  body.navigation-collapsed .brand {
+    margin-bottom: 0;
+  }
+
+  body.navigation-collapsed .navigation-toggle-icon::before {
+    content: "\2304";
+    transform: translateY(-2px);
+  }
+
+  body.navigation-collapsed .nav-tabs,
+  body.navigation-collapsed .sidebar-footer {
+    max-height: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-8px);
+  }
+}
+
+@media (max-width: 420px) {
+  .brand-copy {
+    overflow: hidden;
+  }
+
+  .brand strong.brand-main-title {
+    font-size: 15px;
+  }
+
+  .brand span {
+    font-size: 11px;
   }
 }
 

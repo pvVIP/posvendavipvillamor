@@ -24,6 +24,7 @@ import {
 } from "./dashboard.js?v=20260609-7";
 
 const db = createDataProvider();
+const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
 const state = {
   contracts: [],
   terminated: [],
@@ -46,6 +47,7 @@ const state = {
   installPrompt: null,
   canWrite: true,
   authMode: "signin",
+  navigationCollapsed: readNavigationPreference(),
 };
 
 const distratos = new DistratoService(db);
@@ -53,6 +55,7 @@ const distratos = new DistratoService(db);
 document.addEventListener("DOMContentLoaded", boot);
 
 async function boot() {
+  syncNavigationState(state.navigationCollapsed);
   bindAuthEvents();
   bindEvents();
   setupProgressiveWebApp();
@@ -194,8 +197,17 @@ function roleLabel(role) {
 
 function bindEvents() {
   document.querySelectorAll("[data-tab-target]").forEach((button) => {
-    button.addEventListener("click", () => switchTab(button.dataset.tabTarget));
+    button.addEventListener("click", () => {
+      switchTab(button.dataset.tabTarget);
+      if (window.matchMedia("(max-width: 980px)").matches) {
+        setNavigationCollapsed(true, true);
+      }
+    });
   });
+  document.getElementById("navigationToggle").addEventListener("click", () => {
+    setNavigationCollapsed(!state.navigationCollapsed, true);
+  });
+  window.addEventListener("resize", debounce(() => syncNavigationState(state.navigationCollapsed), 120));
 
   const applyDebounced = debounce(() => {
     state.page = 1;
@@ -397,6 +409,40 @@ function switchTab(target) {
   document.body.dataset.activeTab = target;
   updateFilterDock();
   if (target === "executive") setTimeout(() => renderExecutive(), 80);
+}
+
+function readNavigationPreference() {
+  try {
+    return localStorage.getItem(NAVIGATION_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function setNavigationCollapsed(collapsed, persist = false) {
+  state.navigationCollapsed = Boolean(collapsed);
+  syncNavigationState(state.navigationCollapsed);
+  if (!persist) return;
+  try {
+    localStorage.setItem(NAVIGATION_STORAGE_KEY, String(state.navigationCollapsed));
+  } catch {
+    // A navegação continua funcional quando o navegador bloqueia o armazenamento local.
+  }
+}
+
+function syncNavigationState(collapsed) {
+  document.body.classList.toggle("navigation-collapsed", collapsed);
+  const toggle = document.getElementById("navigationToggle");
+  if (!toggle) return;
+  const mobile = window.matchMedia("(max-width: 980px)").matches;
+  const label = collapsed
+    ? "Abrir menu de navegação"
+    : mobile
+      ? "Recolher menu para cima"
+      : "Recolher menu para a lateral";
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  toggle.setAttribute("aria-label", label);
+  toggle.title = label;
 }
 
 const FILTER_TAB_CONFIG = {

@@ -14,10 +14,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260613-1">
+  <link rel="stylesheet" href="css/style.css?v=20260613-2">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
-  <script src="js/app.js?v=20260613-1" type="module"></script>
+  <script src="js/app.js?v=20260613-2" type="module"></script>
 </head>
 <body>
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -55,31 +55,34 @@
     <aside class="sidebar" aria-label="Menu principal">
       <div class="brand">
         <img src="assets/logo.png" alt="Villamor" class="brand-logo">
-        <div>
-          <strong>VILLAMOR</strong>
-          <span>PÓS-VENDA VIP</span>
+        <div class="brand-copy">
+          <strong class="brand-main-title">PÓS-VENDA VIP</strong>
+          <span>VILLAMOR</span>
         </div>
+        <button class="navigation-toggle" id="navigationToggle" type="button" aria-controls="primaryNavigation" aria-expanded="true" aria-label="Recolher menu para a lateral" title="Recolher menu para a lateral">
+          <span class="navigation-toggle-icon" aria-hidden="true"></span>
+        </button>
       </div>
-      <nav class="nav-tabs" aria-label="Navegação principal">
-        <button class="nav-tab active" id="operationalTab" type="button" data-tab-target="operational" aria-controls="operationalPanel">
+      <nav class="nav-tabs" id="primaryNavigation" aria-label="Navegação principal">
+        <button class="nav-tab active" id="operationalTab" type="button" data-tab-target="operational" aria-controls="operationalPanel" aria-label="Operacionalização" title="Operacionalização">
           <span class="nav-icon" aria-hidden="true">▦</span>
-          Operacionalização
+          <span class="nav-label">Operacionalização</span>
         </button>
-        <button class="nav-tab" id="terminationsTab" type="button" data-tab-target="terminations" aria-controls="terminationsPanel">
+        <button class="nav-tab" id="terminationsTab" type="button" data-tab-target="terminations" aria-controls="terminationsPanel" aria-label="Distratos" title="Distratos">
           <span class="nav-icon" aria-hidden="true">×</span>
-          Distratos
+          <span class="nav-label">Distratos</span>
         </button>
-        <button class="nav-tab" id="reversionsTab" type="button" data-tab-target="reversions" aria-controls="reversionsPanel">
+        <button class="nav-tab" id="reversionsTab" type="button" data-tab-target="reversions" aria-controls="reversionsPanel" aria-label="Reversões" title="Reversões">
           <span class="nav-icon" aria-hidden="true">↺</span>
-          Reversões
+          <span class="nav-label">Reversões</span>
         </button>
-        <button class="nav-tab" id="healthTab" type="button" data-tab-target="health" aria-controls="healthPanel">
+        <button class="nav-tab" id="healthTab" type="button" data-tab-target="health" aria-controls="healthPanel" aria-label="Alertas de Dados" title="Alertas de Dados">
           <span class="nav-icon" aria-hidden="true">!</span>
-          Alertas de Dados
+          <span class="nav-label">Alertas de Dados</span>
         </button>
-        <button class="nav-tab" id="executiveTab" type="button" data-tab-target="executive" aria-controls="executivePanel">
+        <button class="nav-tab" id="executiveTab" type="button" data-tab-target="executive" aria-controls="executivePanel" aria-label="Dashboard Executivo" title="Dashboard Executivo">
           <span class="nav-icon" aria-hidden="true">◈</span>
-          Dashboard Executivo
+          <span class="nav-label">Dashboard Executivo</span>
         </button>
       </nav>
       <div class="sidebar-card">
