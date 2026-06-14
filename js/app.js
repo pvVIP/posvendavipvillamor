@@ -168,10 +168,13 @@ function hideAuthGate() {
 
 function syncAuthMode() {
   const signup = state.authMode === "signup";
+  const password = document.getElementById("authPassword");
   document.getElementById("authNameField").hidden = !signup;
   document.getElementById("authSubmitButton").textContent = signup ? "Criar acesso" : "Entrar";
   document.getElementById("authModeButton").textContent = signup ? "Já tenho acesso" : "Criar primeiro acesso";
-  document.getElementById("authPassword").autocomplete = signup ? "new-password" : "current-password";
+  password.autocomplete = signup ? "new-password" : "current-password";
+  if (signup) password.minLength = 15;
+  else password.removeAttribute("minlength");
   setAuthMessage("");
 }
 
