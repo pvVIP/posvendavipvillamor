@@ -6,10 +6,13 @@ import {
 } from "./utils.js";
 
 const FIELD_ALIASES = {
-  contractId: ["localizador", "numero", "numero contrato", "n contrato", "contrato", "id contrato", "codigo contrato"],
+  contractId: ["localizador", "numero contrato", "n contrato", "contrato", "id contrato"],
+  contractCode: ["codigo", "codigo contrato", "cod contrato"],
+  sourceNumber: ["numero"],
   createdAt: ["data", "data contrato", "data venda", "data cadastro"],
   originReversal: ["origem reversao", "origem da reversao"],
-  sourceStatus: ["status", "estado", "situacao", "situacao contrato"],
+  sourceStatus: ["status", "situacao", "situacao contrato"],
+  clientState: ["estado", "uf"],
   property: ["imovel", "unidade", "apartamento"],
   quota: ["cota", "numero cota"],
   product: ["produto", "grupo produto", "tipo produto", "categoria produto"],
@@ -38,10 +41,14 @@ const FIELD_ALIASES = {
   nextDueDate: ["data proximo vencimento", "proximo vencimento", "data vencimento", "vencimento"],
   primaryBirthDate: ["data nascimento cessionario 1", "data nascimento", "nascimento cliente"],
   secondaryBirthDate: ["data nascimento cessionario 2", "nascimento cotitular"],
+  sourceTerminationDate: ["data cancelamento", "data distrato", "data rescisao"],
+  sourceReversalDate: ["data reversao", "data reativacao"],
+  sourceTerminationReason: ["motivo de cancelamento", "motivo cancelamento", "motivo distrato", "motivo rescisao"],
 };
 
 const FIELD_LABELS = {
-  contractId: "identificador do contrato",
+  contractId: "localizador",
+  contractCode: "código do contrato",
   sourceStatus: "status do contrato",
   primaryClient: "cliente principal",
   product: "produto/grupo",
@@ -124,6 +131,7 @@ export async function parseWorkbookFile(file) {
 
 function removeVerifiedSummaryRows(rows, resolvedHeaders) {
   const contractHeader = resolvedHeaders.get("contractId");
+  const contractCodeHeader = resolvedHeaders.get("contractCode");
   const statusHeader = resolvedHeaders.get("sourceStatus");
   const clientHeader = resolvedHeaders.get("primaryClient");
   const productHeader = resolvedHeaders.get("product");
@@ -139,6 +147,7 @@ function removeVerifiedSummaryRows(rows, resolvedHeaders) {
 
   rows.forEach((row, index) => {
     const identifier = String(contractHeader ? row[contractHeader] ?? "" : "").trim();
+    const contractCode = String(contractCodeHeader ? row[contractCodeHeader] ?? "" : "").trim();
     const status = String(statusHeader ? row[statusHeader] ?? "" : "").trim();
     const client = String(clientHeader ? row[clientHeader] ?? "" : "").trim();
     const product = String(productHeader ? row[productHeader] ?? "" : "").trim();
@@ -149,11 +158,12 @@ function removeVerifiedSummaryRows(rows, resolvedHeaders) {
     });
     const quantityMatch = identifier.match(/^qtd(?:\.|ade)?\s*:\s*(\d+)\s*$/i);
     const declaredQuantity = quantityMatch ? Number(quantityMatch[1]) : null;
-    const matchesDataRowCount = declaredQuantity === rows.length - 1;
+    const expectedDataRows = rows.length - 1;
+    const matchesDataRowCount = declaredQuantity === expectedDataRows;
     const isVerifiedSummary = Boolean(
       quantityMatch
-      && matchesDataRowCount
       && !status
+      && !contractCode
       && !client
       && !product
       && populatedCells.length <= 8
@@ -164,7 +174,9 @@ function removeVerifiedSummaryRows(rows, resolvedHeaders) {
       ignoredRows.push({
         line: index + 2,
         identifier,
-        reason: `Linha de total verificada: quantidade declarada (${declaredQuantity}) coincide com as linhas de contratos e não possui status, cliente ou produto.`,
+        reason: matchesDataRowCount
+          ? `Linha de total verificada: quantidade declarada (${declaredQuantity}) coincide com as linhas de contratos e não possui status, cliente ou produto.`
+          : `Linha de total verificada pela estrutura: não possui status, cliente, produto ou código e concentra totais financeiros. A quantidade declarada (${declaredQuantity}) diverge das ${expectedDataRows} linhas encontradas e foi sinalizada para conferência.`,
       });
     } else {
       keptRows.push(row);
@@ -188,6 +200,10 @@ function resolveHeaders(headers) {
     const field = ALIAS_TO_FIELD.get(normalizeHeader(header));
     if (field && !resolved.has(field)) resolved.set(field, header);
   });
+  if (!resolved.has("contractId")) {
+    const fallbackHeader = resolved.get("contractCode") || resolved.get("sourceNumber");
+    if (fallbackHeader) resolved.set("contractId", fallbackHeader);
+  }
   return resolved;
 }
 
@@ -198,7 +214,7 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
 
   if (!rows.length) errors.push("A planilha não possui linhas de dados.");
   if (!resolvedHeaders.has("contractId")) {
-    errors.push("Não foi encontrada uma coluna confiável de contrato. Use LOCALIZADOR, NÚMERO ou CONTRATO.");
+    errors.push("Não foi encontrada uma coluna confiável para localizar o registro. Use LOCALIZADOR, CÓDIGO ou CONTRATO.");
   }
   if (!resolvedHeaders.has("sourceStatus")) {
     errors.push("Não foi encontrada a coluna STATUS ou ESTADO. Ela é obrigatória para separar ativos, cancelados e revertidos.");
@@ -223,6 +239,7 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   }
 
   const contractHeader = resolvedHeaders.get("contractId");
+  const contractCodeHeader = resolvedHeaders.get("contractCode");
   const statusHeader = resolvedHeaders.get("sourceStatus");
   const clientHeader = resolvedHeaders.get("primaryClient");
   const totalHeader = resolvedHeaders.get("totalUpdatedValue");
@@ -231,6 +248,8 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   let negativeTotalCount = 0;
   let negativeOverdueCount = 0;
   let missingClientCount = 0;
+  let missingContractCodeCount = 0;
+  const contractCodeCounts = new Map();
   const unknownStatuses = new Map();
 
   rows.forEach((row, index) => {
@@ -243,6 +262,14 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
     }
     seen.add(String(contractId).trim());
 
+    if (contractCodeHeader) {
+      const contractCode = String(row[contractCodeHeader] ?? "").trim();
+      if (!contractCode) {
+        missingContractCodeCount += 1;
+      } else {
+        contractCodeCounts.set(contractCode, (contractCodeCounts.get(contractCode) || 0) + 1);
+      }
+    }
     if (totalHeader && toNumber(row[totalHeader]) < 0) negativeTotalCount += 1;
     if (overdueHeader && toNumber(row[overdueHeader]) < 0) negativeOverdueCount += 1;
     if (clientHeader && !row[clientHeader]) missingClientCount += 1;
@@ -270,6 +297,18 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   if (missingClientCount) {
     warnings.push(`${missingClientCount} registros estão sem cliente principal.`);
   }
+  if (!contractCodeHeader) {
+    warnings.push("A coluna CÓDIGO não foi encontrada. O localizador continuará sendo exibido como contrato por compatibilidade.");
+  } else {
+    const duplicatedCodes = [...contractCodeCounts.values()].filter((count) => count > 1);
+    const duplicateRows = duplicatedCodes.reduce((total, count) => total + count, 0);
+    if (missingContractCodeCount) {
+      warnings.push(`${missingContractCodeCount} registros estão sem CÓDIGO de contrato.`);
+    }
+    if (duplicatedCodes.length) {
+      warnings.push(`${duplicatedCodes.length} códigos de contrato aparecem repetidos em ${duplicateRows} registros. Os localizadores únicos serão mantidos para evitar mistura de contratos.`);
+    }
+  }
   if (unknownStatuses.size) {
     const summary = [...unknownStatuses.entries()].map(([status, count]) => `${status}: ${count}`).join(", ");
     warnings.push(`Status ainda não classificados (${summary}). Esses registros serão preservados em Alertas de Dados e ficarão fora dos indicadores.`);
@@ -283,6 +322,12 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
     sourceRows: importSummary.sourceRows ?? rows.length,
     ignoredRows: importSummary.ignoredRows || [],
     statusCounts,
+    contractCodeHealth: {
+      missing: missingContractCodeCount,
+      duplicatedCodes: [...contractCodeCounts.values()].filter((count) => count > 1).length,
+      duplicateRows: [...contractCodeCounts.values()].filter((count) => count > 1)
+        .reduce((total, count) => total + count, 0),
+    },
   };
 }
 
@@ -338,6 +383,9 @@ function normalizeImportedRow(row, resolvedHeaders) {
   return {
     ...output,
     contractId: String(output.contractId).trim(),
+    localizer: String(output.contractId).trim(),
+    contractCode: String(output.contractCode || output.contractId).trim(),
+    hasContractCodeSource: Boolean(String(output.contractCode || "").trim()),
     createdAt: parseExcelDate(output.createdAt),
     settlementDate: parseExcelDate(output.settlementDate),
     nextDueDate: parseExcelDate(output.nextDueDate),
@@ -366,19 +414,19 @@ function detectSourceTermination(row, output) {
   const terminatedByStatus = ["distrat", "cancelad", "rescind", "rescis"].some((term) => statusText.includes(term));
   const revertedByStatus = ["revertid", "reativad", "restaurad"].some((term) => statusText.includes(term));
 
-  const dateEntry = entries.find(([header, value]) => {
+  const dateEntry = output.sourceTerminationDate ? ["sourceTerminationDate", output.sourceTerminationDate] : entries.find(([header, value]) => {
     if (!value) return false;
     const normalized = normalizeHeader(header);
     return normalized.includes("data")
       && ["distrat", "cancel", "rescis"].some((term) => normalized.includes(term));
   });
-  const reversalEntry = entries.find(([header, value]) => {
+  const reversalEntry = output.sourceReversalDate ? ["sourceReversalDate", output.sourceReversalDate] : entries.find(([header, value]) => {
     if (!value) return false;
     const normalized = normalizeHeader(header);
     return normalized.includes("data")
       && ["revers", "reativ", "restaur"].some((term) => normalized.includes(term));
   });
-  const reasonEntry = entries.find(([header, value]) => {
+  const reasonEntry = output.sourceTerminationReason ? ["sourceTerminationReason", output.sourceTerminationReason] : entries.find(([header, value]) => {
     if (!value) return false;
     const normalized = normalizeHeader(header);
     return ["motivo", "razao", "causa"].some((term) => normalized.includes(term))

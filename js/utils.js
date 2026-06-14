@@ -141,7 +141,10 @@ export function enrichContract(contract) {
     agingBucket: getAgingBucket(daysOverdue),
     appStatus,
     searchText: normalizeText([
+      contract.contractCode,
+      contract.localizer,
       contract.contractId,
+      contract.sourceNumber,
       contract.primaryClient,
       contract.secondaryClient,
       contract.primaryDocument,

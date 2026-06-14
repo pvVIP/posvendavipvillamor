@@ -1,6 +1,6 @@
 import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260614-2";
 import { DistratoService } from "./distratos.js?v=20260613-1";
-import { parseWorkbookFile } from "./upload.js?v=20260609-4";
+import { parseWorkbookFile } from "./upload.js?v=20260614-1";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
 import {
@@ -933,7 +933,7 @@ function renderTable() {
   const rows = state.filtered.slice(start, start + state.pageSize);
   document.getElementById("tableSummary").textContent = `${state.filtered.length} contratos filtrados`;
   document.getElementById("pageIndicator").textContent = `Página ${state.page} de ${totalPages}`;
-  document.getElementById("contractsTableBody").innerHTML = rows.map(renderContractRow).join("") || emptyRow(11, "Nenhum contrato encontrado.");
+  document.getElementById("contractsTableBody").innerHTML = rows.map(renderContractRow).join("") || emptyRow(12, "Nenhum contrato encontrado.");
   document.getElementById("contractsMobileList").innerHTML = rows.map(renderMobileContractCard).join("")
     || '<div class="mobile-empty-state">Nenhum contrato encontrado.</div>';
   document.getElementById("selectAllRows").checked = rows.length > 0 && rows.every((row) => state.selected.has(row.contractId));
@@ -948,7 +948,8 @@ function renderContractRow(contract) {
   return `
     <tr data-contract-id="${escapeAttr(contract.contractId)}">
       <td><input type="checkbox" class="row-check" ${checked} ${writeDisabled}></td>
-      <td><strong>${escapeHtml(contract.contractId)}</strong></td>
+      <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong></td>
+      <td><span class="contract-localizer">${escapeHtml(contractLocalizer(contract))}</span></td>
       <td class="client-cell">
         <strong class="client-hover-trigger" tabindex="0">${escapeHtml(contract.primaryClient)}</strong>
         <span>${escapeHtml(contract.primaryDocument || contract.primaryPhone || "")}</span>
@@ -980,12 +981,12 @@ function renderMobileContractCard(contract) {
     <article class="mobile-contract-card" data-contract-id="${escapeAttr(contract.contractId)}">
       <div class="mobile-contract-card-head">
         <label class="mobile-contract-select">
-          <input type="checkbox" class="mobile-row-check" ${checked} ${writeDisabled} aria-label="Selecionar contrato ${escapeAttr(contract.contractId)}">
+          <input type="checkbox" class="mobile-row-check" ${checked} ${writeDisabled} aria-label="Selecionar contrato ${escapeAttr(contractDisplayCode(contract))}">
         </label>
         <button class="mobile-contract-summary" type="button" aria-expanded="false">
           <span>
             <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
-            <small>Contrato ${escapeHtml(contract.contractId)} · ${escapeHtml(contract.category)}</small>
+            <small>Contrato ${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</small>
           </span>
           <span class="mobile-contract-risk">
             <strong>${formatCurrency(contract.overdueValue)}</strong>
@@ -997,6 +998,7 @@ function renderMobileContractCard(contract) {
         <dl>
           <div><dt>Status</dt><dd><span class="status-badge status-${escapeAttr(slugStatus(contract.appStatus))}">${escapeHtml(contract.appStatus)}</span></dd></div>
           <div><dt>Grupo</dt><dd>${escapeHtml(contract.product)}</dd></div>
+          <div><dt>Localizador</dt><dd>${escapeHtml(contractLocalizer(contract))}</dd></div>
           <div><dt>Integralizado</dt><dd>${formatCurrency(contract.effectivePaidValue)}</dd></div>
           <div><dt>Documento</dt><dd>${escapeHtml(contract.primaryDocument || "-")}</dd></div>
         </dl>
@@ -1148,7 +1150,7 @@ function openTerminateDialog() {
     ...state.contracts
       .slice()
       .sort((a, b) => String(a.primaryClient).localeCompare(String(b.primaryClient), "pt-BR"))
-      .map((contract) => `<option value="${escapeAttr(contract.contractId)}">${escapeHtml(contract.primaryClient)} · ${escapeHtml(contract.contractId)}</option>`),
+      .map((contract) => `<option value="${escapeAttr(contract.contractId)}">${escapeHtml(contract.primaryClient)} · ${escapeHtml(contractDisplayCode(contract))}</option>`),
   ].join("");
   contractSelect.value = "";
   contractSearch.value = "";
@@ -1344,15 +1346,18 @@ function renderTerminationContractResults() {
   const matches = state.contracts
     .filter((contract) => !query || normalizeSearchValue([
       contract.primaryClient,
+      contract.contractCode,
+      contract.localizer,
       contract.contractId,
+      contract.sourceNumber,
       contract.primaryDocument,
       contract.primaryPhone,
       contract.product,
     ].join(" ")).includes(query))
     .sort((a, b) => {
       if (query) {
-        const aStarts = normalizeSearchValue(`${a.primaryClient} ${a.contractId}`).startsWith(query) ? 1 : 0;
-        const bStarts = normalizeSearchValue(`${b.primaryClient} ${b.contractId}`).startsWith(query) ? 1 : 0;
+        const aStarts = normalizeSearchValue(`${a.primaryClient} ${contractDisplayCode(a)} ${contractLocalizer(a)}`).startsWith(query) ? 1 : 0;
+        const bStarts = normalizeSearchValue(`${b.primaryClient} ${contractDisplayCode(b)} ${contractLocalizer(b)}`).startsWith(query) ? 1 : 0;
         if (aStarts !== bStarts) return bStarts - aStarts;
       }
       return toNumber(b.overdueValue) - toNumber(a.overdueValue);
@@ -1363,7 +1368,7 @@ function renderTerminationContractResults() {
     <button type="button" role="option" data-contract-result="${escapeAttr(contract.contractId)}" aria-selected="false">
       <span>
         <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
-        <small>${escapeHtml(contract.contractId)} · ${escapeHtml(contract.primaryDocument || contract.primaryPhone || contract.product || "")}</small>
+        <small>${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</small>
       </span>
       <span>
         <strong>${formatCurrency(contract.overdueValue)}</strong>
@@ -1386,7 +1391,7 @@ function selectTerminationContract(contractId) {
   if (!contract) return;
   const select = document.getElementById("terminationContractSelect");
   select.value = contractId;
-  document.getElementById("terminationContractSearch").value = `${contract.primaryClient} · ${contract.contractId}`;
+  document.getElementById("terminationContractSearch").value = `${contract.primaryClient} · ${contractDisplayCode(contract)}`;
   document.getElementById("terminationContractResults").hidden = true;
   handleTerminationContractSelection({ target: select });
 }
@@ -1418,6 +1423,28 @@ function normalizeSearchValue(value) {
     .trim();
 }
 
+function contractLocalizer(contract) {
+  return String(contract?.localizer || contract?.contractId || "-");
+}
+
+function contractDisplayCode(contract) {
+  const directCode = String(contract?.contractCode || "").trim();
+  if (directCode) return directCode;
+  const localizer = contractLocalizer(contract);
+  const sourceMatch = [
+    ...state.historicalTerminated,
+    ...state.reversions,
+    ...state.sourceExceptions,
+    ...state.contracts,
+  ].find((item) => contractLocalizer(item) === localizer && String(item.contractCode || "").trim());
+  return String(sourceMatch?.contractCode || contract?.contractId || "-");
+}
+
+function linkedContractDisplayCode(localizer) {
+  const linked = state.contracts.find((contract) => contractLocalizer(contract) === String(localizer || ""));
+  return linked ? contractDisplayCode(linked) : String(localizer || "");
+}
+
 function renderTerminationContractSummary() {
   const contract = state.pendingTermination.length === 1 ? state.pendingTermination[0] : null;
   const summary = document.getElementById("terminationContractSummary");
@@ -1429,7 +1456,7 @@ function renderTerminationContractSummary() {
   summary.hidden = false;
   summary.innerHTML = `
     <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
-    <span>Contrato ${escapeHtml(contract.contractId)} · ${escapeHtml(contract.product || "Produto não informado")}</span>
+    <span>Contrato ${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</span>
     <small>Integralizado: ${formatCurrency(contract.effectivePaidValue)}</small>
   `;
 }
@@ -1524,7 +1551,7 @@ function renderTerminatedTable() {
   document.getElementById("terminationConsolidated").innerHTML = terminationConsolidatedMarkup(contracts);
   document.getElementById("terminatedTableBody").innerHTML = contracts.map((contract) => `
     <tr>
-      <td><strong>${escapeHtml(contract.contractId)}</strong></td>
+      <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong><br><small>Localizador ${escapeHtml(contractLocalizer(contract))}</small></td>
       <td>${escapeHtml(contract.primaryClient)}</td>
       <td>${formatCurrency(contract.effectivePaidValue)}</td>
       <td>${formatDate(contract.terminatedAt)}</td>
@@ -1578,7 +1605,7 @@ function getFilteredTerminations() {
   const end = document.getElementById("terminationEndDate").value;
   return state.terminated
     .filter((contract) => {
-      const haystack = `${contract.primaryClient || ""} ${contract.contractId || ""}`.toLowerCase();
+      const haystack = `${contract.primaryClient || ""} ${contractDisplayCode(contract)} ${contractLocalizer(contract)}`.toLowerCase();
       const date = String(contract.terminatedAt || "").slice(0, 10);
       if (query && !haystack.includes(query)) return false;
       if (reason !== "all" && contract.terminationReason !== reason) return false;
@@ -1663,7 +1690,7 @@ function renderHistoricalTerminatedTable() {
   document.getElementById("historicalTerminatedSummary").textContent = `${state.historicalTerminated.length} registros`;
   document.getElementById("historicalTerminatedTableBody").innerHTML = state.historicalTerminated.map((contract) => `
     <tr>
-      <td><strong>${escapeHtml(contract.contractId)}</strong></td>
+      <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong><br><small>Localizador ${escapeHtml(contractLocalizer(contract))}</small></td>
       <td>${escapeHtml(contract.primaryClient || "-")}</td>
       <td>${formatCurrency(contract.effectivePaidValue)}</td>
       <td>${formatDate(contract.sourceTerminationDate)}</td>
@@ -1685,10 +1712,10 @@ function renderReversions() {
   ].join("");
   document.getElementById("reversionsTableBody").innerHTML = state.reversions.map((contract) => `
     <tr>
-      <td><strong>${escapeHtml(contract.contractId)}</strong></td>
+      <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong><br><small>Localizador ${escapeHtml(contractLocalizer(contract))}</small></td>
       <td>${escapeHtml(contract.primaryClient || "-")}</td>
       <td>${escapeHtml(contract.originReversal || "-")}</td>
-      <td>${escapeHtml(contract.linkedActiveContractId || "Não localizado")}</td>
+      <td>${escapeHtml(linkedContractDisplayCode(contract.linkedActiveContractId) || "Não localizado")}</td>
       <td>${escapeHtml(contract.linkedActiveClient || "-")}</td>
       <td>${formatDate(contract.sourceReversalDate)}</td>
       <td>${formatCurrency(contract.effectivePaidValue)}</td>
@@ -1759,6 +1786,16 @@ function buildDataHealthAlerts() {
   const reversionsWithoutOrigin = state.reversions.filter((contract) => !String(contract.originReversal || "").trim());
   const terminationsWithoutDate = state.historicalTerminated.filter((contract) => !contract.sourceTerminationDate);
   const terminationsWithoutReason = state.historicalTerminated.filter((contract) => !String(contract.sourceTerminationReason || "").trim());
+  const sourceContracts = [...state.contracts, ...state.historicalTerminated, ...state.reversions, ...state.sourceExceptions];
+  const codeCounts = new Map();
+  sourceContracts.forEach((contract) => {
+    if (!contract.hasContractCodeSource) return;
+    const code = String(contract.contractCode || "").trim();
+    if (code) codeCounts.set(code, (codeCounts.get(code) || 0) + 1);
+  });
+  const duplicatedContractCodeRows = [...codeCounts.values()]
+    .filter((count) => count > 1)
+    .reduce((total, count) => total + count, 0);
 
   addHealthAlert(alerts, "critical", "Status incompatível na carteira ativa", notExplicitlyActive.length,
     "Existem contratos na área ativa sem status de origem igual a Ativo. Eles podem distorcer toda a carteira.",
@@ -1778,6 +1815,9 @@ function buildDataHealthAlerts() {
   addHealthAlert(alerts, "warning", "Clientes ativos sem nome", missingClients.length,
     "A ausência do cliente prejudica busca, cobrança, conferência e relatórios.",
     "Complemente o cessionário principal na base de contratos.");
+  addHealthAlert(alerts, "warning", "Códigos de contrato duplicados", duplicatedContractCodeRows,
+    "O CÓDIGO é exibido como número do contrato, mas aparece em mais de um registro da base. Os localizadores únicos impedem que os dados sejam misturados.",
+    "Revise os códigos repetidos na origem e use o localizador para confirmar qual registro está sendo tratado.");
   addHealthAlert(alerts, "warning", "Ajustes financeiros negativos", negativeAdjustments.length,
     "Os valores originais foram preservados, mas neutralizados nos indicadores para não reduzir carteira ou inadimplência.",
     "Confirme se representam crédito, estorno ou ajuste e crie uma classificação financeira na origem.");
@@ -1859,7 +1899,7 @@ function renderRanking(contracts) {
       <strong>${index + 1}</strong>
       <div>
         <strong>${escapeHtml(contract.primaryClient)}</strong>
-        <span>${escapeHtml(contract.contractId)} · ${escapeHtml(contract.category)} · ${contract.daysOverdue} dias</span>
+        <span>${escapeHtml(contractDisplayCode(contract))} · ${escapeHtml(contract.category)} · ${contract.daysOverdue} dias</span>
       </div>
       <strong>${formatCurrency(contract.overdueValue)}</strong>
     </div>
@@ -1869,7 +1909,7 @@ function renderRanking(contracts) {
       const contract = state.contracts.find((row) => row.contractId === item.dataset.contractId);
       if (!contract) return;
       switchTab("operational");
-      document.getElementById("globalSearch").value = contract.contractId;
+      document.getElementById("globalSearch").value = contractDisplayCode(contract);
       state.page = 1;
       renderAll();
       setTimeout(() => document.querySelector(`[data-contract-id="${CSS.escape(contract.contractId)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
@@ -1897,13 +1937,15 @@ function showContractHoverCard(contract, trigger) {
     <div class="hover-card-header">
       <div>
         <strong>${escapeHtml(contract.primaryClient)}</strong>
-        <span>Contrato ${escapeHtml(contract.contractId)} · ${escapeHtml(contract.property || "-")} / ${escapeHtml(contract.quota || "-")}</span>
+        <span>Contrato ${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</span>
       </div>
       <span class="status-badge status-${escapeAttr(slugStatus(contract.appStatus))}">${escapeHtml(contract.appStatus)}</span>
     </div>
     <div class="hover-card-grid">
       ${hoverDetail("Cessionário 2", contract.secondaryClient || "Não informado")}
       ${hoverDetail("Produto", contract.product || "-")}
+      ${hoverDetail("Localizador", contractLocalizer(contract))}
+      ${hoverDetail("Estado", contract.clientState || "Não informado")}
       ${hoverDetail("Valor do contrato", formatCurrency(contract.totalUpdatedValue))}
       ${hoverDetail("Valor em atraso", formatCurrency(contract.overdueValue))}
       ${hoverDetail("Próximo vencimento", formatDate(contract.nextDueDate))}
@@ -2191,6 +2233,7 @@ function buildPostImportReport(pending, mergeReport, restarted) {
     newExtras: pending.columnAnalysis.newExtras || [],
     unknownExtras: pending.columnAnalysis.unknownExtras,
     ignoredRows: pending.validation.ignoredRows || [],
+    contractCodeHealth: pending.validation.contractCodeHealth || {},
     suggestions,
     mergeReport,
     restarted,
@@ -2218,6 +2261,9 @@ function showPostImportReport(report) {
   ];
   if (report.ignoredRows.length) {
     lines.push(`<div class="report-line warning">${report.ignoredRows.length} linha de total foi reconhecida por múltiplos critérios e não foi importada como contrato.</div>`);
+  }
+  if (report.contractCodeHealth?.duplicatedCodes) {
+    lines.push(`<div class="report-line warning">${report.contractCodeHealth.duplicatedCodes} códigos de contrato estão duplicados em ${report.contractCodeHealth.duplicateRows} registros. O localizador foi preservado como chave técnica segura.</div>`);
   }
   if (report.exceptions) {
     lines.push(`<div class="report-line warning">${report.exceptions} registros possuem status não reconhecido e foram preservados em Alertas de Dados, fora dos indicadores.</div>`);
@@ -2368,7 +2414,7 @@ function formalTerminationReportMarkup(contracts, totals) {
       <thead><tr><th>Contrato / Cliente</th><th>Data</th><th>Motivo</th><th>Abordagem</th><th>Integralizado</th><th>Retido</th><th>Reembolso</th><th>Responsável</th></tr></thead>
       <tbody>${contracts.map((contract) => `
         <tr>
-          <td><strong>${escapeHtml(contract.contractId)}</strong><br>${escapeHtml(contract.primaryClient || "-")}</td>
+          <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong><br>${escapeHtml(contract.primaryClient || "-")}</td>
           <td>${escapeHtml(formatDate(contract.terminatedAt))}</td>
           <td>${escapeHtml(contract.terminationReason || "Não informado")}<small>${escapeHtml(contract.terminationObservation || "")}</small></td>
           <td>${escapeHtml(approachLabel(contract.terminationApproach))}</td>
@@ -2408,7 +2454,7 @@ function executiveTerminationReportMarkup(contracts, totals) {
     <section class="attention-box">
       <h3>Destaques do período</h3>
       <p>Motivo mais recorrente: <strong>${escapeHtml(reasons[0]?.[0] || "Não informado")}</strong>, com ${reasons[0]?.[1] || 0} registros.</p>
-      <p>Maior retenção registrada: <strong>${escapeHtml(largestRetention ? formatCurrency(largestRetention.retainedValue) : "Não houve")}</strong>${largestRetention ? ` no contrato ${escapeHtml(largestRetention.contractId)}.` : "."}</p>
+      <p>Maior retenção registrada: <strong>${escapeHtml(largestRetention ? formatCurrency(largestRetention.retainedValue) : "Não houve")}</strong>${largestRetention ? ` no contrato ${escapeHtml(contractDisplayCode(largestRetention))}.` : "."}</p>
       <p>Ponto de atenção: ${totals.refunded > totals.retained ? "o total reembolsado supera o recuperado por retenções." : "o recuperado por retenções é igual ou superior aos reembolsos do período."}</p>
     </section>
   `;

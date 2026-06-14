@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260614-1">
+  <link rel="stylesheet" href="css/style.css?v=20260614-2">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260614-3" type="module"></script>
+  <script src="js/app.js?v=20260614-4" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -141,7 +141,7 @@
         <div class="filter-popover-fields">
           <label>
             Busca
-            <input type="search" id="globalSearch" placeholder="Cliente, contrato, CPF, produto">
+            <input type="search" id="globalSearch" placeholder="Cliente, contrato, localizador, CPF">
           </label>
           <label>
             Categoria
@@ -221,7 +221,8 @@
               <thead>
                 <tr>
                   <th scope="col" class="selection-column"><input type="checkbox" id="selectAllRows" aria-label="Selecionar todos os contratos desta página"></th>
-                  <th scope="col" data-sort="contractId"><button class="sort-button" type="button">Contrato</button></th>
+                  <th scope="col" data-sort="contractCode"><button class="sort-button" type="button">Contrato</button></th>
+                  <th scope="col" data-sort="contractId"><button class="sort-button" type="button">Localizador</button></th>
                   <th scope="col" data-sort="primaryClient"><button class="sort-button" type="button">Cliente</button></th>
                   <th scope="col" data-sort="category"><button class="sort-button" type="button">Categoria</button></th>
                   <th scope="col" data-sort="product"><button class="sort-button" type="button">Grupo</button></th>
@@ -269,7 +270,7 @@
           <div class="filter-popover-fields">
             <label>
               Buscar
-              <input type="search" id="terminationSearch" placeholder="Cliente ou contrato">
+              <input type="search" id="terminationSearch" placeholder="Cliente, contrato ou localizador">
             </label>
             <label>
               Motivo
@@ -491,7 +492,7 @@
       <p class="modal-alert" id="terminateDialogDescription">Esta operação removerá o contrato dos indicadores ativos.</p>
       <label id="terminationContractField" hidden>
         Contrato
-        <input type="search" id="terminationContractSearch" autocomplete="off" placeholder="Digite cliente, contrato, CPF ou telefone" aria-autocomplete="list" aria-controls="terminationContractResults">
+        <input type="search" id="terminationContractSearch" autocomplete="off" placeholder="Digite cliente, contrato, localizador, CPF ou telefone" aria-autocomplete="list" aria-controls="terminationContractResults">
         <select id="terminationContractSelect" class="sr-only" tabindex="-1" aria-hidden="true"></select>
         <div class="contract-search-results" id="terminationContractResults" role="listbox" aria-label="Contratos encontrados" hidden></div>
       </label>

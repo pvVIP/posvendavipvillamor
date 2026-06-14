@@ -971,6 +971,18 @@ textarea:focus {
   margin-top: 3px;
 }
 
+.contract-localizer {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#contractsTableBody td:nth-child(2) strong {
+  display: inline-block;
+  max-width: 190px;
+  overflow-wrap: anywhere;
+}
+
 .status-badge,
 .category-pill {
   display: inline-flex;
