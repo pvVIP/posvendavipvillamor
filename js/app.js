@@ -1,4 +1,4 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260613-4";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260614-1";
 import { DistratoService } from "./distratos.js?v=20260613-1";
 import { parseWorkbookFile } from "./upload.js?v=20260609-4";
 import { renderCharts } from "./charts.js";

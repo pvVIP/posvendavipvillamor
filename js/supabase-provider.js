@@ -1,5 +1,5 @@
 import { Database } from "./database.js?v=20260611-1";
-import { requestTotpVerification } from "./mfa-dialog.js?v=20260613-2";
+import { requestTotpVerification } from "./mfa-dialog.js?v=20260614-1";
 import { SupabaseClient } from "./supabase-client.js?v=20260613-3";
 import { enrichContract, todayIso } from "./utils.js";
 
@@ -8,6 +8,7 @@ export class SupabaseProvider extends Database {
     super();
     this.client = new SupabaseClient(config.supabaseUrl, config.supabasePublishableKey);
     this.profile = null;
+    this.mfaEnrollmentDeferred = false;
   }
 
   get requiresAuthentication() {
@@ -163,6 +164,7 @@ export class SupabaseProvider extends Database {
   async ensurePrivilegedMfa() {
     if (!["admin", "operator"].includes(this.profile?.role)) return;
     if (this.client.getAssuranceLevel() === "aal2") return;
+    if (this.mfaEnrollmentDeferred) return;
 
     try {
       const factors = await this.client.listFactors();
@@ -183,16 +185,21 @@ export class SupabaseProvider extends Database {
           totpFactors.map((factor) => this.client.unenrollFactor(factor.id).catch(() => null)),
         );
         const factor = await this.client.enrollTotp();
-        await requestTotpVerification({
+        const result = await requestTotpVerification({
           enrollment: {
             qrCode: factor.totp?.qr_code || "",
             secret: factor.totp?.secret || "",
+            uri: factor.totp?.uri || "",
           },
           onVerify: async (code) => {
             const challenge = await this.client.challengeMfa(factor.id);
             return this.client.verifyMfa(factor.id, challenge.id, code);
           },
         });
+        if (result?.deferred) {
+          this.mfaEnrollmentDeferred = true;
+          return;
+        }
       }
 
       if (this.client.getAssuranceLevel() !== "aal2") {

@@ -1,17 +1,17 @@
-const CACHE_NAME = "pos-venda-vip-v15";
+const CACHE_NAME = "pos-venda-vip-v16";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./offline.html",
   "./manifest.webmanifest",
   "./css/style.css?v=20260613-4",
-  "./js/app.js?v=20260613-4",
+  "./js/app.js?v=20260614-1",
   "./js/config.js",
-  "./js/data-provider.js?v=20260613-4",
+  "./js/data-provider.js?v=20260614-1",
   "./js/database.js?v=20260611-1",
   "./js/supabase-client.js?v=20260613-3",
-  "./js/supabase-provider.js?v=20260613-4",
-  "./js/mfa-dialog.js?v=20260613-2",
+  "./js/supabase-provider.js?v=20260614-1",
+  "./js/mfa-dialog.js?v=20260614-1",
   "./js/storage.js?v=20260609-5",
   "./js/distratos.js?v=20260613-1",
   "./js/upload.js?v=20260609-4",

@@ -32,13 +32,32 @@ export function requestTotpVerification({
     const description = document.createElement("p");
     description.id = "mfaDialogDescription";
     description.textContent = enrollment
-      ? "Escaneie o QR Code no aplicativo autenticador e informe o código gerado."
+      ? "Esta proteção é opcional por enquanto. No celular, use a chave manual em um autenticador ou continue sem configurar."
       : "Informe o código atual do seu aplicativo autenticador.";
     description.style.cssText = "margin:0;font:400 14px/1.5 Inter,sans-serif;color:#695457";
 
     form.append(eyebrow, title, description);
 
     if (enrollment) {
+      const mobileHelp = document.createElement("div");
+      mobileHelp.style.cssText = [
+        "padding:12px 14px",
+        "border:1px solid #e2cfca",
+        "border-radius:12px",
+        "background:#f7eeeb",
+        "font:500 13px/1.45 Inter,sans-serif",
+        "color:#523f42",
+      ].join(";");
+
+      const mobileHelpTitle = document.createElement("strong");
+      mobileHelpTitle.textContent = "ESTOU NO CELULAR";
+      mobileHelpTitle.style.cssText = "display:block;margin-bottom:5px;color:#7f3045";
+
+      const mobileHelpText = document.createTextNode(
+        "Abra o Google Authenticator, Microsoft Authenticator ou o app Senhas do iPhone, escolha adicionar uma chave de configuração e cole a chave manual abaixo.",
+      );
+      mobileHelp.append(mobileHelpTitle, mobileHelpText);
+
       const qrShell = document.createElement("div");
       qrShell.style.cssText = "display:grid;place-items:center;padding:14px;border-radius:14px;background:#fff";
 
@@ -66,7 +85,32 @@ export function requestTotpVerification({
         "color:#522b2c",
       ].join(";");
 
-      form.append(qrShell, secretLabel, secret);
+      const setupActions = document.createElement("div");
+      setupActions.style.cssText = "display:flex;flex-wrap:wrap;gap:8px";
+
+      const copySecret = document.createElement("button");
+      copySecret.type = "button";
+      copySecret.textContent = "Copiar chave";
+      copySecret.style.cssText = buttonStyle("#fff", "#522b2c", "#cdb9b7");
+      copySecret.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(enrollment.secret);
+          copySecret.textContent = "Chave copiada";
+        } catch {
+          message.textContent = "Toque e segure a chave para copiá-la.";
+        }
+      });
+      setupActions.appendChild(copySecret);
+
+      if (enrollment.uri) {
+        const openAuthenticator = document.createElement("a");
+        openAuthenticator.href = enrollment.uri;
+        openAuthenticator.textContent = "Abrir autenticador";
+        openAuthenticator.style.cssText = `${buttonStyle("#fff", "#522b2c", "#cdb9b7")};text-decoration:none`;
+        setupActions.appendChild(openAuthenticator);
+      }
+
+      form.append(mobileHelp, qrShell, secretLabel, secret, setupActions);
     }
 
     const label = document.createElement("label");
@@ -103,12 +147,12 @@ export function requestTotpVerification({
 
     const cancel = document.createElement("button");
     cancel.type = "button";
-    cancel.textContent = "Cancelar";
+    cancel.textContent = enrollment ? "Continuar sem configurar" : "Cancelar";
     cancel.style.cssText = buttonStyle("#fff", "#522b2c", "#cdb9b7");
 
     const confirm = document.createElement("button");
     confirm.type = "submit";
-    confirm.textContent = "Verificar";
+    confirm.textContent = enrollment ? "Ativar proteção" : "Verificar";
     confirm.style.cssText = buttonStyle("#7f3045", "#fff", "#7f3045");
 
     actions.append(cancel, confirm);
@@ -117,20 +161,24 @@ export function requestTotpVerification({
     document.body.appendChild(dialog);
 
     let settled = false;
-    const closeWithError = () => {
+    const closeDialog = () => {
       if (settled) return;
       settled = true;
       dialog.close();
       dialog.remove();
+      if (enrollment) {
+        resolve({ deferred: true });
+        return;
+      }
       const error = new Error("A autenticação em dois fatores é obrigatória para este perfil.");
       error.code = "MFA_REQUIRED";
       reject(error);
     };
 
-    cancel.addEventListener("click", closeWithError);
+    cancel.addEventListener("click", closeDialog);
     dialog.addEventListener("cancel", (event) => {
       event.preventDefault();
-      closeWithError();
+      closeDialog();
     });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -144,7 +192,7 @@ export function requestTotpVerification({
       input.disabled = true;
       cancel.disabled = true;
       confirm.disabled = true;
-      confirm.textContent = "Verificando...";
+      confirm.textContent = enrollment ? "Ativando..." : "Verificando...";
       message.textContent = "";
 
       try {
@@ -157,7 +205,7 @@ export function requestTotpVerification({
         input.disabled = false;
         cancel.disabled = false;
         confirm.disabled = false;
-        confirm.textContent = "Verificar";
+        confirm.textContent = enrollment ? "Ativar proteção" : "Verificar";
         input.select();
         input.focus();
         message.textContent = mfaErrorMessage(error);
