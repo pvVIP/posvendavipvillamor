@@ -2677,12 +2677,6 @@ function printExecutivePortfolioReport() {
           ${reportMetric("Distratos Inadimplência", kpis.totalTerminated, "closed", `Usuário: ${state.currentUser}`)}
           ${reportMetric("Recuperado", formatCurrency(kpis.retainedTotal), "cyan", "Valor efetivamente retido")}
           ${reportMetric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "navy", "Integralizado dos inadimplentes")}
-          ${reportMetric("Carteira", formatCurrency(kpis.totalPortfolio), "", "Valor total")}
-          ${reportMetric("Inadimplência", formatCurrency(kpis.totalOverdue), "danger", "Valor atrasado")}
-          ${reportMetric("% Inadimplência", formatPercent(kpis.defaultRate), "", "Sobre carteira")}
-          ${reportMetric("Ticket Médio", formatCurrency(kpis.averageTicket), "", "Contratos ativos")}
-          ${reportMetric("% Distratos", formatPercent(kpis.terminationRate), "closed", "Por inadimplência")}
-          ${reportMetric("Aging Médio", `${Math.round(kpis.averageAging)} dias`, "", `${kpis.aging90Plus} contratos 90+ dias`)}
         </section>
         ${executiveProgressMarkup(complianceRate, kpis.totalCurrent, kpis.totalActive)}
         ${executiveAgingMarkup(aging)}
