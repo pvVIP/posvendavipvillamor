@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260614-2">
+  <link rel="stylesheet" href="css/style.css?v=20260615-1">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260614-4" type="module"></script>
+  <script src="js/app.js?v=20260615-1" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -60,7 +60,7 @@
   <div class="app-shell">
     <aside class="sidebar" aria-label="Menu principal">
       <div class="brand">
-        <img src="assets/logo.png" alt="Villamor" class="brand-logo">
+        <img src="assets/shortcut-logo.png" alt="Villamor" class="brand-logo">
         <div class="brand-copy">
           <strong class="brand-main-title">PÓS-VENDA VIP</strong>
           <span>VILLAMOR</span>
@@ -72,30 +72,37 @@
       <nav class="nav-tabs" id="primaryNavigation" aria-label="Navegação principal">
         <button class="nav-tab active" id="operationalTab" type="button" data-tab-target="operational" aria-controls="operationalPanel" aria-label="Operacionalização" title="Operacionalização">
           <span class="nav-icon" aria-hidden="true">▦</span>
-          <span class="nav-label">Operacionalização</span>
+          <span class="nav-label">OPERACIONALIZAÇÃO</span>
         </button>
         <button class="nav-tab" id="terminationsTab" type="button" data-tab-target="terminations" aria-controls="terminationsPanel" aria-label="Distratos" title="Distratos">
           <span class="nav-icon" aria-hidden="true">×</span>
-          <span class="nav-label">Distratos</span>
+          <span class="nav-label">DISTRATOS</span>
         </button>
         <button class="nav-tab" id="reversionsTab" type="button" data-tab-target="reversions" aria-controls="reversionsPanel" aria-label="Reversões" title="Reversões">
           <span class="nav-icon" aria-hidden="true">↺</span>
-          <span class="nav-label">Reversões</span>
+          <span class="nav-label">REVERSÕES</span>
         </button>
         <button class="nav-tab" id="healthTab" type="button" data-tab-target="health" aria-controls="healthPanel" aria-label="Alertas de Dados" title="Alertas de Dados">
           <span class="nav-icon" aria-hidden="true">!</span>
-          <span class="nav-label">Alertas de Dados</span>
+          <span class="nav-label">ALERTAS DE DADOS</span>
         </button>
-        <button class="nav-tab" id="executiveTab" type="button" data-tab-target="executive" aria-controls="executivePanel" aria-label="Dashboard Executivo" title="Dashboard Executivo">
+        <button class="nav-tab" id="executiveTab" type="button" data-tab-target="executive" aria-controls="executivePanel" aria-label="Painel da Inadimplência" title="Painel da Inadimplência">
           <span class="nav-icon" aria-hidden="true">◈</span>
-          <span class="nav-label">Dashboard Executivo</span>
+          <span class="nav-label">PAINEL DA INADIMPLÊNCIA</span>
         </button>
       </nav>
-      <div class="sidebar-card">
-        <span id="userModeLabel">Usuário local</span>
-        <strong id="currentUserLabel">Operador Local</strong>
-        <small id="dataModeLabel">Dados neste dispositivo</small>
-        <button class="ghost-button compact" id="changeUserButton" type="button">Alterar</button>
+      <div class="sidebar-card profile-summary">
+        <img class="profile-avatar" id="currentUserAvatar" src="assets/shortcut-logo.png" alt="">
+        <div class="profile-summary-copy">
+          <span id="userModeLabel">Usuário local</span>
+          <strong id="currentUserLabel">Operador Local</strong>
+          <small id="currentUserJobTitle">Sucesso do Cliente</small>
+          <small id="dataModeLabel">Dados neste dispositivo</small>
+        </div>
+        <div class="profile-summary-actions">
+          <button class="ghost-button compact" id="editProfileButton" type="button">Editar perfil</button>
+          <button class="ghost-button compact" id="changeUserButton" type="button">Alterar</button>
+        </div>
       </div>
       <div class="sidebar-footer">
         <div class="connection-status" id="connectionStatus" role="status">
@@ -230,8 +237,7 @@
                   <th scope="col" data-sort="overdueValue"><button class="sort-button" type="button">Atraso</button></th>
                   <th scope="col" data-sort="daysOverdue"><button class="sort-button" type="button">Dias</button></th>
                   <th scope="col" data-sort="appStatus"><button class="sort-button" type="button">Status</button></th>
-                  <th scope="col">Observações</th>
-                  <th scope="col" data-sort="lastUpdatedAt"><button class="sort-button" type="button">Atualização</button></th>
+                  <th scope="col">Ações</th>
                 </tr>
               </thead>
               <tbody id="contractsTableBody"></tbody>
@@ -250,8 +256,8 @@
         <div class="section-header split termination-hub-header">
           <div>
             <p class="eyebrow">Central de controle</p>
-            <h2>Distratos lançados a partir de 07/05/2026</h2>
-            <p class="section-description">Produção do setor, valores efetivamente retidos e contexto de cada encerramento.</p>
+            <h2>Distratos</h2>
+            <p class="section-description">Lançamentos do Pós-Venda VIP e distratos identificados nas atualizações, sem duplicação.</p>
           </div>
           <div class="termination-hub-actions">
             <button class="primary-button" id="newTerminationButton" type="button">Lançar distrato</button>
@@ -288,6 +294,15 @@
               </select>
             </label>
             <label>
+              Origem
+              <select id="terminationOriginFilter">
+                <option value="all">Todas</option>
+                <option value="manual_pending">Lançado no Pós-Venda VIP</option>
+                <option value="source_confirmed">Confirmado pela atualização</option>
+                <option value="source_identified">Identificado na atualização</option>
+              </select>
+            </label>
+            <label>
               De
               <input type="date" id="terminationStartDate">
             </label>
@@ -308,7 +323,7 @@
           </div>
           <div class="table-scroll" tabindex="0" aria-label="Distratos lançados">
             <table class="data-table">
-              <caption class="sr-only">Distratos lançados a partir de 7 de maio de 2026</caption>
+              <caption class="sr-only">Todos os distratos conciliados</caption>
               <thead>
                 <tr>
                   <th scope="col">Contrato</th>
@@ -321,6 +336,7 @@
                   <th scope="col">Reembolso</th>
                   <th scope="col">Observação</th>
                   <th scope="col">Responsável</th>
+                  <th scope="col">Origem</th>
                   <th scope="col">Ação</th>
                 </tr>
               </thead>
@@ -329,32 +345,6 @@
           </div>
         </div>
         <div class="termination-consolidated" id="terminationConsolidated" aria-live="polite"></div>
-
-        <div class="section-header split historical-section-header">
-          <div>
-            <p class="eyebrow">Histórico importado</p>
-            <h2>Outros distratos identificados na base</h2>
-          </div>
-          <span id="historicalTerminatedSummary" aria-live="polite">0 registros</span>
-        </div>
-        <div class="table-shell compact-table">
-          <div class="table-scroll" tabindex="0" aria-label="Histórico de distratos importados">
-            <table class="data-table">
-              <caption class="sr-only">Outros distratos identificados na base importada</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Contrato</th>
-                  <th scope="col">Cliente</th>
-                  <th scope="col">Integralizado</th>
-                  <th scope="col">Data do distrato</th>
-                  <th scope="col">Motivo identificado</th>
-                  <th scope="col">Origem</th>
-                </tr>
-              </thead>
-              <tbody id="historicalTerminatedTableBody"></tbody>
-            </table>
-          </div>
-        </div>
       </section>
 
       <section class="tab-panel" id="reversionsPanel" role="region" aria-labelledby="reversionsTab">
@@ -602,8 +592,52 @@
     </form>
   </dialog>
 
+  <dialog id="profileDialog" class="modal profile-dialog" aria-labelledby="profileDialogTitle">
+    <form method="dialog" id="profileForm">
+      <h2 id="profileDialogTitle">Editar perfil</h2>
+      <div class="profile-editor-header">
+        <img id="profileAvatarPreview" src="assets/shortcut-logo.png" alt="Prévia da foto de perfil">
+        <label class="secondary-button file-button compact">
+          Escolher foto
+          <input type="file" id="profileAvatarInput" accept="image/png,image/jpeg,image/webp">
+        </label>
+      </div>
+      <label>
+        Nome
+        <input type="text" id="profileDisplayName" maxlength="80" required>
+      </label>
+      <label>
+        Função
+        <input type="text" id="profileJobTitle" maxlength="80" placeholder="Ex.: Sucesso do Cliente">
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="secondary-button" id="cancelProfileButton">Cancelar</button>
+        <button type="submit" class="primary-button">Salvar perfil</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toastHost" class="toast-host" role="status" aria-live="polite" aria-atomic="true"></div>
   <div id="contractHoverCard" class="contract-hover-card" role="tooltip" hidden></div>
+  <aside id="annotationActionMenu" class="annotation-action-menu" aria-label="Anotação do contrato" hidden>
+    <div class="annotation-menu-heading">
+      <div>
+        <strong id="annotationMenuClient"></strong>
+        <small id="annotationMenuContract"></small>
+      </div>
+      <button class="annotation-menu-close" id="closeAnnotationMenuButton" type="button" aria-label="Fechar">×</button>
+    </div>
+    <p id="annotationMenuPreview" class="annotation-menu-preview"></p>
+    <div id="annotationMenuActions" class="annotation-menu-actions"></div>
+    <div id="annotationEditor" class="annotation-editor" hidden>
+      <label for="annotationText">Anotação</label>
+      <textarea id="annotationText" maxlength="1000" placeholder="Registre o contexto operacional"></textarea>
+      <div>
+        <button class="secondary-button compact" id="cancelAnnotationButton" type="button">Cancelar</button>
+        <button class="primary-button compact" id="saveAnnotationButton" type="button">Salvar</button>
+      </div>
+    </div>
+  </aside>
   <button class="filter-fab" id="filterToggleButton" type="button" aria-expanded="false" aria-label="Abrir filtros" title="Filtros" hidden>
     <span class="filter-fab-icon" aria-hidden="true"></span>
     <span class="filter-fab-badge" id="filterActiveCount" aria-hidden="true" hidden>0</span>

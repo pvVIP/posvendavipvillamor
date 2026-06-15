@@ -1,4 +1,4 @@
-import { Database } from "./database.js?v=20260611-1";
+import { Database } from "./database.js?v=20260615-1";
 import { requestTotpVerification } from "./mfa-dialog.js?v=20260614-1";
 import { SupabaseClient } from "./supabase-client.js?v=20260614-1";
 import { enrichContract, todayIso } from "./utils.js";
@@ -60,10 +60,7 @@ export class SupabaseProvider extends Database {
   async loadProfile() {
     const userId = this.client.session?.user?.id;
     if (!userId) throw providerError("AUTH_REQUIRED", "Sua sessão expirou. Entre novamente.");
-    const rows = await this.client.selectAll(
-      "profiles",
-      `id=eq.${encodeURIComponent(userId)}&select=id,display_name,role,is_active`,
-    );
+    const rows = await this.client.rpc("get_own_profile");
     this.profile = rows[0] || null;
     if (!this.profile) throw providerError("PROFILE_MISSING", "Perfil ainda não provisionado.");
     if (!this.profile.is_active) {
@@ -78,6 +75,8 @@ export class SupabaseProvider extends Database {
       name: this.profile?.display_name || this.client.session?.user?.email || "Usuário",
       email: this.client.session?.user?.email || "",
       role: this.profile?.role || "viewer",
+      jobTitle: this.profile?.job_title || "",
+      avatarUrl: this.profile?.avatar_url || "",
       canWrite: ["admin", "operator"].includes(this.profile?.role),
       assuranceLevel: this.client.getAssuranceLevel(),
     };
@@ -257,6 +256,16 @@ export class SupabaseProvider extends Database {
       p_key: key,
       p_value: value,
     });
+  }
+
+  async updateProfile(profile) {
+    const rows = await this.client.rpc("update_own_profile", {
+      p_display_name: profile.displayName,
+      p_job_title: profile.jobTitle || null,
+      p_avatar_url: profile.avatarUrl || null,
+    });
+    this.profile = rows?.[0] || this.profile;
+    return this.profile;
   }
 
   async terminateContract(contractId, reason, financial = {}) {

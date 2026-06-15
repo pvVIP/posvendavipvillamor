@@ -37,6 +37,11 @@ export class DistratoService {
       retentionTotal: Boolean(financial.retentionTotal),
       hasRefund: Boolean(financial.hasRefund),
       refundValue: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
+      reconciliationStatus: "manual_pending",
+      sourceConfirmedAt: null,
+      sourceConfirmationDate: null,
+      sourceConfirmationReason: null,
+      sourceConfirmationPayload: null,
     };
 
     await this.database.deleteContract(contract.contractId);
@@ -137,6 +142,11 @@ export class DistratoService {
       lastEditedAt: null,
       lastEditedBy: null,
       lastEditJustification: null,
+      reconciliationStatus: null,
+      sourceConfirmedAt: null,
+      sourceConfirmationDate: null,
+      sourceConfirmationReason: null,
+      sourceConfirmationPayload: null,
       lastUpdatedAt: todayIso(),
       localUser: user,
     };

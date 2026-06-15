@@ -211,6 +211,19 @@ export class Database {
     await this.storage.put("settings", { key, value });
   }
 
+  async updateProfile(profile) {
+    const current = (await this.getSettings()).profile || {};
+    const updated = {
+      ...current,
+      display_name: profile.displayName,
+      job_title: profile.jobTitle || "",
+      avatar_url: profile.avatarUrl || "",
+    };
+    await this.setSetting("profile", updated);
+    await this.setSetting("currentUser", updated.display_name);
+    return updated;
+  }
+
   async addAuditLog(payload) {
     await this.storage.put("auditLogs", {
       id: createId("audit"),
@@ -243,6 +256,8 @@ export class Database {
     const incomingIds = new Set(incomingContracts.map((item) => item.contractId));
     const activeIds = new Set(activeIncoming.map((item) => item.contractId));
     const linkedReversions = linkReversionsToActiveContracts(sourceReversions, activeIncoming);
+    const confirmedTerminations = sourceTerminations.filter((item) => terminatedMap.has(item.contractId));
+    const identifiedTerminations = sourceTerminations.filter((item) => !terminatedMap.has(item.contractId));
     const merged = current.filter((item) => !incomingIds.has(item.contractId));
     const report = {
       inserted: 0,
@@ -250,6 +265,8 @@ export class Database {
       skipped: 0,
       preservedTerminated: 0,
       historicalTerminationsDetected: sourceTerminations.length,
+      confirmedTerminations: confirmedTerminations.length,
+      identifiedTerminations: identifiedTerminations.length,
       reversionsDetected: linkedReversions.length,
       unlinkedReversions: linkedReversions.filter((item) => !item.linkedActiveContractId).length,
       sourceExceptions: sourceExceptions.length,
@@ -293,10 +310,25 @@ export class Database {
     });
 
     await this.setContracts(merged);
-    await this.setSourceTerminations(sourceTerminations.map((contract) => enrichContract({
+    const confirmationTime = todayIso();
+    for (const sourceContract of confirmedTerminations) {
+      const manual = terminatedMap.get(sourceContract.contractId);
+      terminatedMap.set(sourceContract.contractId, enrichContract({
+        ...manual,
+        reconciliationStatus: "source_confirmed",
+        sourceConfirmedAt: confirmationTime,
+        sourceConfirmationDate: sourceContract.sourceTerminationDate || null,
+        sourceConfirmationReason: sourceContract.sourceTerminationReason || null,
+        sourceConfirmationPayload: sourceContract,
+        lastUpdatedAt: confirmationTime,
+      }));
+    }
+    await this.setTerminatedContracts([...terminatedMap.values()]);
+    await this.setSourceTerminations(identifiedTerminations.map((contract) => enrichContract({
       ...currentMap.get(contract.contractId),
       ...contract,
       sourceTerminationOrigin: contract.sourceTerminationOrigin || "Base importada",
+      reconciliationStatus: "source_identified",
       sourceUpdatedAt: todayIso(),
     })));
     await this.setSourceReversions(linkedReversions.map((contract) => enrichContract({

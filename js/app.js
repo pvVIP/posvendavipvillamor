@@ -1,5 +1,5 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260614-2";
-import { DistratoService } from "./distratos.js?v=20260613-1";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260615-1";
+import { DistratoService } from "./distratos.js?v=20260615-1";
 import { parseWorkbookFile } from "./upload.js?v=20260614-1";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
@@ -21,7 +21,7 @@ import {
   groupByCategory,
   getHeatmapData,
   getTopDefaulted,
-} from "./dashboard.js?v=20260609-7";
+} from "./dashboard.js?v=20260615-1";
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
@@ -40,6 +40,10 @@ const state = {
   currentUser: "Operador Local",
   currentUserId: null,
   currentRole: "operator",
+  currentJobTitle: "",
+  currentAvatarUrl: "",
+  profileAvatarDraft: "",
+  annotationContract: null,
   pendingTermination: [],
   editingTermination: null,
   terminationTrigger: null,
@@ -91,11 +95,14 @@ async function initializeApplication() {
   hideAuthGate();
   const settings = await db.getSettings();
   const identity = db.getIdentity?.();
-  state.currentUser = identity?.name || settings.currentUser || "Operador Local";
+  const localProfile = settings.profile || {};
+  state.currentUser = identity?.name || localProfile.display_name || settings.currentUser || "Operador Local";
   state.currentUserId = identity?.id || null;
   state.currentRole = identity?.role || "operator";
+  state.currentJobTitle = identity?.jobTitle || localProfile.job_title || "Sucesso do Cliente";
+  state.currentAvatarUrl = identity?.avatarUrl || localProfile.avatar_url || "";
   state.canWrite = identity?.canWrite ?? true;
-  document.getElementById("currentUserLabel").textContent = state.currentUser;
+  syncProfileSummary();
   document.getElementById("dataModeLabel").textContent = getDataProviderInfo().label;
   document.getElementById("userModeLabel").textContent = identity
     ? `${roleLabel(identity.role)} online`
@@ -363,18 +370,29 @@ function bindEvents() {
   document.getElementById("formalTerminationReportButton").addEventListener("click", () => printTerminationReport("formal"));
   document.getElementById("executiveTerminationReportButton").addEventListener("click", () => printTerminationReport("executive"));
   document.getElementById("clearTerminationFiltersButton").addEventListener("click", clearTerminationFilters);
-  ["terminationSearch", "terminationReasonFilter", "terminationApproachFilter", "terminationStartDate", "terminationEndDate"]
+  ["terminationSearch", "terminationReasonFilter", "terminationApproachFilter", "terminationOriginFilter", "terminationStartDate", "terminationEndDate"]
     .forEach((id) => document.getElementById(id).addEventListener("input", () => {
       renderTerminatedTable();
       updateFilterDock();
     }));
   document.getElementById("changeUserButton").addEventListener("click", changeUser);
+  document.getElementById("editProfileButton").addEventListener("click", openProfileDialog);
+  document.getElementById("profileForm").addEventListener("submit", saveProfile);
+  document.getElementById("cancelProfileButton").addEventListener("click", closeProfileDialog);
+  document.getElementById("profileAvatarInput").addEventListener("change", handleProfileAvatar);
+  document.getElementById("closeAnnotationMenuButton").addEventListener("click", closeAnnotationMenu);
+  document.getElementById("cancelAnnotationButton").addEventListener("click", syncAnnotationMenu);
+  document.getElementById("saveAnnotationButton").addEventListener("click", saveAnnotation);
   document.getElementById("themeToggle").addEventListener("click", toggleTheme);
   document.getElementById("installAppButton").addEventListener("click", installProgressiveWebApp);
   document.querySelector("#executiveAnalytics > summary").addEventListener("click", () => {
     document.getElementById("executiveAnalytics").dataset.userToggled = "true";
   });
   document.addEventListener("pointerdown", handleContractSearchOutsideClick);
+  document.addEventListener("pointerdown", handleAnnotationOutsideClick);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeAnnotationMenu();
+  });
 }
 
 async function refreshApplicationData() {
@@ -449,7 +467,6 @@ function renderAll() {
   renderOperationalKpis();
   renderTable();
   renderTerminatedTable();
-  renderHistoricalTerminatedTable();
   renderReversions();
   renderDataHealth();
   renderExecutive();
@@ -532,7 +549,7 @@ const TOPBAR_CONTENT = {
   },
   executive: {
     eyebrow: "Visão estratégica",
-    title: "Dashboard executivo",
+    title: "Painel da Inadimplência",
     description: "Risco, exposição e prioridades da carteira em uma leitura objetiva.",
   },
 };
@@ -710,6 +727,7 @@ function terminationFilterDescriptors() {
   [
     ["terminationReasonFilter", "Motivo"],
     ["terminationApproachFilter", "Abordagem"],
+    ["terminationOriginFilter", "Origem"],
   ].forEach(([id, label]) => {
     const element = document.getElementById(id);
     if (element.value !== "all") descriptors.push({ id, label: `${label}: ${selectedOptionLabel(element)}` });
@@ -747,6 +765,7 @@ function activeTerminationFilterCount() {
     document.getElementById("terminationSearch").value.trim(),
     document.getElementById("terminationReasonFilter").value === "all" ? "" : document.getElementById("terminationReasonFilter").value,
     document.getElementById("terminationApproachFilter").value === "all" ? "" : document.getElementById("terminationApproachFilter").value,
+    document.getElementById("terminationOriginFilter").value === "all" ? "" : document.getElementById("terminationOriginFilter").value,
     document.getElementById("terminationStartDate").value,
     document.getElementById("terminationEndDate").value,
   ].filter(Boolean).length;
@@ -832,35 +851,36 @@ function renderOperationalKpis() {
 
 function renderExecutive() {
   const active = getActiveContracts(state.filtered);
-  const productionTerminations = getProductionTerminations();
-  const kpis = calculateKpis(active, productionTerminations);
+  const defaultTerminations = getProductionTerminations();
+  const kpis = calculateKpis(active, defaultTerminations);
   document.getElementById("dashboardDate").textContent = `Atualizado em ${formatDate(new Date().toISOString())}`;
   document.getElementById("executivePrimaryKpis").innerHTML = [
-    metric("Exposição em atraso", formatCurrency(kpis.totalOverdue), "Valor financeiro sob risco", "danger"),
-    metric("% inadimplência", formatPercent(kpis.defaultRate), "Sobre o valor da carteira", "danger"),
-    metric("Faixa crítica", `${kpis.aging180Plus} contratos`, "Mais de 180 dias", "warning"),
-    metric("Potencial recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes", "success"),
-  ].join("");
-  document.getElementById("executiveKpis").innerHTML = [
-    metric("Contratos ativos", kpis.totalActive, "Carteira filtrada"),
+    metric("Contratos Ativos", kpis.totalActive, "Carteira filtrada"),
     metric("Adimplentes", kpis.totalCurrent, "Inclui quitados", "success"),
     metric("Inadimplentes", kpis.totalDefaulted, "90+ dias", "danger"),
-    metric("Em atraso", kpis.totalLate, "Até 89 dias", "warning"),
-    metric("Distratados", kpis.totalTerminated, "A partir de 07/05/2026", "closed", "terminatedMetricCard"),
+    metric("Em Atraso", kpis.totalLate, "Até 89 dias", "warning"),
+    metric("Distratos Inadimplência", kpis.totalTerminated, `Usuário: ${state.currentUser}`, "closed", "terminatedMetricCard"),
+    metric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes", "navy"),
+    metric("Recuperado", formatCurrency(kpis.retainedTotal), "Valor efetivamente retido", "cyan"),
+  ].join("");
+  document.getElementById("executiveKpis").innerHTML = [
     metric("Carteira", formatCurrency(kpis.totalPortfolio), "Valor total"),
-    metric("Ticket médio", formatCurrency(kpis.averageTicket), "Ativos"),
-    metric("% distratos", formatPercent(kpis.terminationRate), "Total histórico"),
-    metric("Aging médio", `${Math.round(kpis.averageAging)} dias`, `${kpis.aging90Plus} contratos 90+ dias`),
+    metric("Inadimplência", formatCurrency(kpis.totalOverdue), "Valor em atraso", "danger"),
+    metric("% Inadimplência", formatPercent(kpis.defaultRate), "Sobre a carteira", "danger"),
+    metric("Ticket Médio", formatCurrency(kpis.averageTicket), "Ativos"),
+    metric("% Distratos", formatPercent(kpis.terminationRate), "Distratos por inadimplência"),
+    metric("Aging Médio", `${Math.round(kpis.averageAging)} dias`, `${kpis.aging90Plus} contratos 90+ dias`),
+    metric("Faixa Crítica", `${kpis.aging180Plus} contratos`, "Mais de 180 dias", "warning"),
   ].join("");
   bindTerminatedMetricHover();
   renderExecutiveBrief(active, kpis);
-  renderCharts(active, productionTerminations, {
+  renderCharts(active, defaultTerminations, {
     onCategorySelect: (category) => applyDashboardDrilldown("categoryFilter", category),
     onAgingSelect: (aging) => applyDashboardDrilldown("agingFilter", aging),
   });
   renderHeatmap(active);
   renderRanking(active);
-  renderInsights(active, productionTerminations);
+  renderInsights(active, defaultTerminations);
 }
 
 function metric(label, value, helper, tone = "", id = "", className = "") {
@@ -909,17 +929,17 @@ function renderExecutiveBrief(contracts, kpis) {
       <small>${riskMessage}</small>
     </article>
     <article class="brief-item">
-      <span>Faixa crítica</span>
+      <span>Faixa Crítica</span>
       <strong>${kpis.aging180Plus} contratos</strong>
       <small>Com mais de 180 dias desde o próximo vencimento.</small>
     </article>
     <article class="brief-item">
-      <span>Maior concentração</span>
+      <span>Maior Concentração</span>
       <strong>${escapeHtml(categoryRisk?.label || "Sem exposição")}</strong>
       <small>${formatPercent(concentration)} do valor total em atraso.</small>
     </article>
     <article class="brief-item">
-      <span>Prioridade financeira</span>
+      <span>Prioridade Financeira</span>
       <strong>${formatCurrency(categoryRisk?.value || 0)}</strong>
       <small>Exposição da categoria mais representativa.</small>
     </article>
@@ -933,7 +953,7 @@ function renderTable() {
   const rows = state.filtered.slice(start, start + state.pageSize);
   document.getElementById("tableSummary").textContent = `${state.filtered.length} contratos filtrados`;
   document.getElementById("pageIndicator").textContent = `Página ${state.page} de ${totalPages}`;
-  document.getElementById("contractsTableBody").innerHTML = rows.map(renderContractRow).join("") || emptyRow(12, "Nenhum contrato encontrado.");
+  document.getElementById("contractsTableBody").innerHTML = rows.map(renderContractRow).join("") || emptyRow(11, "Nenhum contrato encontrado.");
   document.getElementById("contractsMobileList").innerHTML = rows.map(renderMobileContractCard).join("")
     || '<div class="mobile-empty-state">Nenhum contrato encontrado.</div>';
   document.getElementById("selectAllRows").checked = rows.length > 0 && rows.every((row) => state.selected.has(row.contractId));
@@ -946,7 +966,7 @@ function renderContractRow(contract) {
   const checked = state.selected.has(contract.contractId) ? "checked" : "";
   const writeDisabled = state.canWrite ? "" : "disabled";
   return `
-    <tr data-contract-id="${escapeAttr(contract.contractId)}">
+    <tr data-contract-id="${escapeAttr(contract.contractId)}" class="${state.selected.has(contract.contractId) ? "is-selected" : ""}">
       <td><input type="checkbox" class="row-check" ${checked} ${writeDisabled}></td>
       <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong></td>
       <td><span class="contract-localizer">${escapeHtml(contractLocalizer(contract))}</span></td>
@@ -960,15 +980,9 @@ function renderContractRow(contract) {
       <td>${formatCurrency(contract.overdueValue)}</td>
       <td>${contract.daysOverdue}</td>
       <td><span class="status-badge status-${escapeAttr(slugStatus(contract.appStatus))}">${escapeHtml(contract.appStatus)}</span></td>
-      <td>
-        <div class="notes-editor">
-          <input class="notes-input" value="${escapeAttr(contract.notes || "")}" placeholder="Observações" ${writeDisabled}>
-          <small class="note-save-status" aria-live="polite"></small>
-        </div>
-      </td>
-      <td>
-        ${contract.lastUpdatedAt ? `<span class="last-update">${formatDate(contract.lastUpdatedAt)}</span>` : ""}
+      <td class="operational-row-actions">
         ${state.canWrite ? '<button class="danger-button compact terminate-row-button" type="button">Distratar</button>' : ""}
+        ${contract.notes ? '<button class="annotation-marker" type="button" aria-label="Exibir anotação" title="Exibir anotação"><span aria-hidden="true">●</span></button>' : ""}
       </td>
     </tr>
   `;
@@ -978,7 +992,7 @@ function renderMobileContractCard(contract) {
   const checked = state.selected.has(contract.contractId) ? "checked" : "";
   const writeDisabled = state.canWrite ? "" : "disabled";
   return `
-    <article class="mobile-contract-card" data-contract-id="${escapeAttr(contract.contractId)}">
+    <article class="mobile-contract-card ${state.selected.has(contract.contractId) ? "is-selected" : ""}" data-contract-id="${escapeAttr(contract.contractId)}">
       <div class="mobile-contract-card-head">
         <label class="mobile-contract-select">
           <input type="checkbox" class="mobile-row-check" ${checked} ${writeDisabled} aria-label="Selecionar contrato ${escapeAttr(contractDisplayCode(contract))}">
@@ -1002,12 +1016,11 @@ function renderMobileContractCard(contract) {
           <div><dt>Integralizado</dt><dd>${formatCurrency(contract.effectivePaidValue)}</dd></div>
           <div><dt>Documento</dt><dd>${escapeHtml(contract.primaryDocument || "-")}</dd></div>
         </dl>
-        <label class="mobile-notes-label">
-          Observações
-          <textarea class="mobile-notes-input" placeholder="Contexto da operação" ${writeDisabled}>${escapeHtml(contract.notes || "")}</textarea>
-          <small class="note-save-status" aria-live="polite"></small>
-        </label>
-        ${state.canWrite ? '<button class="danger-button mobile-terminate-button" type="button">Distratar contrato</button>' : ""}
+        <div class="mobile-contract-actions">
+          ${state.canWrite ? '<button class="annotation-mobile-button secondary-button" type="button">Anotação</button>' : ""}
+          ${state.canWrite ? '<button class="danger-button mobile-terminate-button" type="button">Distratar contrato</button>' : ""}
+          ${contract.notes ? '<button class="annotation-marker" type="button" aria-label="Exibir anotação" title="Exibir anotação"><span aria-hidden="true">●</span></button>' : ""}
+        </div>
       </div>
     </article>
   `;
@@ -1019,6 +1032,7 @@ function bindTableRows() {
     row.querySelector(".row-check").addEventListener("change", (event) => {
       if (event.target.checked) state.selected.add(contract.contractId);
       else state.selected.delete(contract.contractId);
+      row.classList.toggle("is-selected", event.target.checked);
       syncSelectionInputs(contract.contractId);
       renderSelectionBar();
     });
@@ -1028,16 +1042,20 @@ function bindTableRows() {
       state.terminationTrigger = terminateButton;
       openTerminateDialog();
     });
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button, input, a, select, textarea")) return;
+      selectContractForAnnotation(contract, row);
+    });
     const clientTrigger = row.querySelector(".client-hover-trigger");
     clientTrigger.addEventListener("mouseenter", () => showContractHoverCard(contract, clientTrigger));
     clientTrigger.addEventListener("mousemove", () => positionContractHoverCard(clientTrigger));
     clientTrigger.addEventListener("mouseleave", hideContractHoverCard);
     clientTrigger.addEventListener("focus", () => showContractHoverCard(contract, clientTrigger));
     clientTrigger.addEventListener("blur", hideContractHoverCard);
-    const notesInput = row.querySelector(".notes-input");
-    const noteStatus = row.querySelector(".note-save-status");
-    notesInput.addEventListener("input", () => setNoteStatus(noteStatus, "Alterado"));
-    notesInput.addEventListener("change", (event) => handleNotesChange(contract, event.target.value, noteStatus));
+    row.querySelector(".annotation-marker")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectContractForAnnotation(contract, event.currentTarget);
+    });
   });
 }
 
@@ -1054,6 +1072,7 @@ function bindMobileContractCards() {
     card.querySelector(".mobile-row-check").addEventListener("change", (event) => {
       if (event.target.checked) state.selected.add(contract.contractId);
       else state.selected.delete(contract.contractId);
+      card.classList.toggle("is-selected", event.target.checked);
       syncSelectionInputs(contract.contractId);
       renderSelectionBar();
     });
@@ -1062,15 +1081,17 @@ function bindMobileContractCards() {
       state.terminationTrigger = card.querySelector(".mobile-terminate-button");
       openTerminateDialog();
     });
-    const notesInput = card.querySelector(".mobile-notes-input");
-    const noteStatus = card.querySelector(".note-save-status");
-    notesInput.addEventListener("input", () => setNoteStatus(noteStatus, "Alterado"));
-    notesInput.addEventListener("change", (event) => handleNotesChange(contract, event.target.value, noteStatus));
+    card.querySelector(".annotation-mobile-button")?.addEventListener("click", (event) => {
+      selectContractForAnnotation(contract, event.currentTarget);
+    });
+    card.querySelector(".annotation-marker")?.addEventListener("click", (event) => {
+      selectContractForAnnotation(contract, event.currentTarget);
+    });
   });
 }
 
 async function handleNotesChange(contract, notes, statusElement = null) {
-  if (!state.canWrite) return;
+  if (!state.canWrite) return false;
   setNoteStatus(statusElement, "Salvando...");
   try {
     await distratos.updateNotes(contract, notes, state.currentUser);
@@ -1078,10 +1099,103 @@ async function handleNotesChange(contract, notes, statusElement = null) {
     const stored = state.contracts.find((item) => item.contractId === contract.contractId);
     if (stored) stored.notes = notes;
     setNoteStatus(statusElement, "Salvo", "success");
+    return true;
   } catch (error) {
     setNoteStatus(statusElement, "Falha ao salvar", "error");
     toast(`Não foi possível salvar a observação: ${error.message}`);
+    return false;
   }
+}
+
+function selectContractForAnnotation(contract, trigger) {
+  state.selected.add(contract.contractId);
+  syncSelectionInputs(contract.contractId);
+  document.querySelectorAll(`[data-contract-id="${CSS.escape(contract.contractId)}"]`)
+    .forEach((element) => element.classList.add("is-selected"));
+  renderSelectionBar();
+  state.annotationContract = contract;
+  syncAnnotationMenu();
+  positionAnnotationMenu(trigger);
+}
+
+function syncAnnotationMenu() {
+  const menu = document.getElementById("annotationActionMenu");
+  const contract = state.annotationContract;
+  if (!contract) {
+    menu.hidden = true;
+    return;
+  }
+  document.getElementById("annotationMenuClient").textContent = contract.primaryClient || "Cliente não informado";
+  document.getElementById("annotationMenuContract").textContent = `Contrato ${contractDisplayCode(contract)} · Localizador ${contractLocalizer(contract)}`;
+  const preview = document.getElementById("annotationMenuPreview");
+  preview.textContent = contract.notes || "Este contrato ainda não possui anotação.";
+  preview.classList.toggle("is-empty", !contract.notes);
+  document.getElementById("annotationEditor").hidden = true;
+  const actions = document.getElementById("annotationMenuActions");
+  actions.innerHTML = contract.notes
+    ? `
+      <button class="secondary-button compact annotation-edit-button" type="button">Alterar Anotação</button>
+      <button class="ghost-button compact annotation-remove-button" type="button">Remover Anotação</button>
+    `
+    : '<button class="primary-button compact annotation-add-button" type="button">Adicionar Anotação</button>';
+  actions.querySelector(".annotation-add-button, .annotation-edit-button")?.addEventListener("click", openAnnotationEditor);
+  actions.querySelector(".annotation-remove-button")?.addEventListener("click", removeAnnotation);
+  menu.hidden = false;
+}
+
+function openAnnotationEditor() {
+  const contract = state.annotationContract;
+  if (!contract) return;
+  document.getElementById("annotationText").value = contract.notes || "";
+  document.getElementById("annotationEditor").hidden = false;
+  document.getElementById("annotationMenuActions").innerHTML = "";
+  document.getElementById("annotationText").focus();
+}
+
+async function saveAnnotation() {
+  const contract = state.annotationContract;
+  if (!contract) return;
+  const notes = document.getElementById("annotationText").value.trim();
+  const saved = await handleNotesChange(contract, notes);
+  if (!saved) return;
+  toast(notes ? "Anotação salva." : "Anotação removida.");
+  closeAnnotationMenu();
+  renderTable();
+}
+
+async function removeAnnotation() {
+  const contract = state.annotationContract;
+  if (!contract || !window.confirm("Remover a anotação deste contrato?")) return;
+  const saved = await handleNotesChange(contract, "");
+  if (!saved) return;
+  toast("Anotação removida.");
+  closeAnnotationMenu();
+  renderTable();
+}
+
+function closeAnnotationMenu() {
+  document.getElementById("annotationActionMenu").hidden = true;
+  state.annotationContract = null;
+}
+
+function positionAnnotationMenu(trigger) {
+  const menu = document.getElementById("annotationActionMenu");
+  if (!trigger || menu.hidden) return;
+  const rect = trigger.getBoundingClientRect();
+  const margin = 12;
+  const width = menu.offsetWidth;
+  const height = menu.offsetHeight;
+  let left = Math.min(rect.left, window.innerWidth - width - margin);
+  let top = rect.bottom + 8;
+  if (top + height > window.innerHeight - margin) top = rect.top - height - 8;
+  menu.style.left = `${Math.max(margin, left)}px`;
+  menu.style.top = `${Math.max(margin, top)}px`;
+}
+
+function handleAnnotationOutsideClick(event) {
+  const menu = document.getElementById("annotationActionMenu");
+  if (menu.hidden || menu.contains(event.target) || event.target.closest(".annotation-marker, .annotation-mobile-button")) return;
+  closeAnnotationMenu();
 }
 
 function setNoteStatus(element, message, tone = "") {
@@ -1537,9 +1651,10 @@ function localDateInputValue(date = new Date()) {
 
 function renderTerminatedTable() {
   populateTerminationReasonFilter();
+  const allTerminations = getUnifiedTerminations();
   const contracts = getFilteredTerminations();
   const totals = calculateTerminationTotals(contracts);
-  document.getElementById("terminatedSummary").textContent = `${contracts.length} de ${state.terminated.length} registros`;
+  document.getElementById("terminatedSummary").textContent = `${contracts.length} de ${allTerminations.length} registros`;
   document.getElementById("terminationKpis").innerHTML = [
     metric("Distratos", totals.count, "No período filtrado", "closed"),
     metric("Recuperado", formatCurrency(totals.retained), "Valor efetivamente retido", "success"),
@@ -1552,7 +1667,7 @@ function renderTerminatedTable() {
   document.getElementById("terminatedTableBody").innerHTML = contracts.map((contract) => `
     <tr>
       <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong><br><small>Localizador ${escapeHtml(contractLocalizer(contract))}</small></td>
-      <td>${escapeHtml(contract.primaryClient)}</td>
+      <td>${escapeHtml(contract.primaryClient || "-")}</td>
       <td>${formatCurrency(contract.effectivePaidValue)}</td>
       <td>${formatDate(contract.terminatedAt)}</td>
       <td><span class="status-badge ${contract.isDefaultTermination === false ? "termination-other" : "termination-default"}">${escapeHtml(contract.terminationReason || "Não informado")}</span></td>
@@ -1561,14 +1676,15 @@ function renderTerminatedTable() {
       <td>${contract.hasRefund ? formatCurrency(contract.refundValue) : "Não houve"}</td>
       <td class="termination-observation-cell">${escapeHtml(contract.terminationObservation || "-")}</td>
       <td>${escapeHtml(contract.terminatedBy || "-")}</td>
+      <td><span class="reconciliation-badge reconciliation-${escapeAttr(contract.reconciliationStatus)}">${escapeHtml(reconciliationLabel(contract.reconciliationStatus))}</span></td>
       <td class="termination-row-actions">
         <div>
           ${canEditTermination(contract) ? `<button class="secondary-button compact edit-termination-button" type="button" data-id="${escapeAttr(contract.contractId)}">Editar</button>` : ""}
-          ${state.canWrite ? `<button class="ghost-button compact restore-button" type="button" data-id="${escapeAttr(contract.contractId)}">Restaurar</button>` : ""}
+          ${state.canWrite && !contract.sourceOnlyTermination ? `<button class="ghost-button compact restore-button" type="button" data-id="${escapeAttr(contract.contractId)}">Restaurar</button>` : ""}
         </div>
       </td>
     </tr>
-  `).join("") || emptyRow(11, "Nenhum distrato encontrado para estes filtros.");
+  `).join("") || emptyRow(12, "Nenhum distrato encontrado para estes filtros.");
   document.querySelectorAll(".edit-termination-button").forEach((button) => {
     button.addEventListener("click", () => {
       const contract = state.terminated.find((item) => item.contractId === button.dataset.id);
@@ -1589,7 +1705,7 @@ function renderTerminatedTable() {
 function populateTerminationReasonFilter() {
   const select = document.getElementById("terminationReasonFilter");
   const current = select.value || "all";
-  const reasons = byUnique(state.terminated.map((item) => item.terminationReason).filter(Boolean));
+  const reasons = byUnique(getUnifiedTerminations().map((item) => item.terminationReason).filter(Boolean));
   select.innerHTML = [
     '<option value="all">Todos</option>',
     ...reasons.map((reason) => `<option value="${escapeAttr(reason)}">${escapeHtml(reason)}</option>`),
@@ -1601,15 +1717,17 @@ function getFilteredTerminations() {
   const query = document.getElementById("terminationSearch").value.trim().toLowerCase();
   const reason = document.getElementById("terminationReasonFilter").value;
   const approach = document.getElementById("terminationApproachFilter").value;
+  const origin = document.getElementById("terminationOriginFilter").value;
   const start = document.getElementById("terminationStartDate").value;
   const end = document.getElementById("terminationEndDate").value;
-  return state.terminated
+  return getUnifiedTerminations()
     .filter((contract) => {
       const haystack = `${contract.primaryClient || ""} ${contractDisplayCode(contract)} ${contractLocalizer(contract)}`.toLowerCase();
       const date = String(contract.terminatedAt || "").slice(0, 10);
       if (query && !haystack.includes(query)) return false;
       if (reason !== "all" && contract.terminationReason !== reason) return false;
       if (approach !== "all" && (contract.terminationApproach || "nao_informada") !== approach) return false;
+      if (origin !== "all" && contract.reconciliationStatus !== origin) return false;
       if (start && date < start) return false;
       if (end && date > end) return false;
       return true;
@@ -1669,8 +1787,17 @@ function approachLabel(value) {
   }[value] || "Não informada";
 }
 
+function reconciliationLabel(value) {
+  return {
+    manual_pending: "Lançado no Pós-Venda VIP",
+    source_confirmed: "Confirmado pela Atualização",
+    source_identified: "Identificado na Atualização",
+  }[value] || "Origem Não Informada";
+}
+
 function canEditTermination(contract) {
   if (!state.canWrite) return false;
+  if (contract.sourceOnlyTermination) return false;
   if (state.currentRole === "admin") return true;
   if (state.currentUserId) return contract.terminatedById === state.currentUserId;
   return Boolean(contract.terminatedBy) && contract.terminatedBy === state.currentUser;
@@ -1682,22 +1809,9 @@ function clearTerminationFilters() {
   });
   document.getElementById("terminationReasonFilter").value = "all";
   document.getElementById("terminationApproachFilter").value = "all";
+  document.getElementById("terminationOriginFilter").value = "all";
   renderTerminatedTable();
   updateFilterDock();
-}
-
-function renderHistoricalTerminatedTable() {
-  document.getElementById("historicalTerminatedSummary").textContent = `${state.historicalTerminated.length} registros`;
-  document.getElementById("historicalTerminatedTableBody").innerHTML = state.historicalTerminated.map((contract) => `
-    <tr>
-      <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong><br><small>Localizador ${escapeHtml(contractLocalizer(contract))}</small></td>
-      <td>${escapeHtml(contract.primaryClient || "-")}</td>
-      <td>${formatCurrency(contract.effectivePaidValue)}</td>
-      <td>${formatDate(contract.sourceTerminationDate)}</td>
-      <td>${escapeHtml(contract.sourceTerminationReason || "Não informado")}</td>
-      <td>${escapeHtml(contract.sourceTerminationOrigin || "Base importada")}</td>
-    </tr>
-  `).join("") || emptyRow(6, "Nenhum distrato histórico identificado até o momento.");
 }
 
 function renderReversions() {
@@ -1847,23 +1961,24 @@ function bindTerminatedMetricHover() {
 function showTerminationSummary(trigger) {
   const card = document.getElementById("contractHoverCard");
   const production = getProductionTerminations();
-  const manualDefault = production.filter((item) => item.isDefaultTermination !== false).length;
-  const manualOther = production.filter((item) => item.isDefaultTermination === false).length;
-  const historicalWithDate = state.historicalTerminated.filter((item) => item.sourceTerminationDate).length;
+  const unified = getUnifiedTerminations();
+  const confirmed = unified.filter((item) => item.reconciliationStatus === "source_confirmed").length;
+  const identified = unified.filter((item) => item.reconciliationStatus === "source_identified").length;
+  const pending = unified.filter((item) => item.reconciliationStatus === "manual_pending").length;
   card.innerHTML = `
     <div class="hover-card-header">
       <div>
-        <strong>Resumo dos distratos</strong>
-        <span>Produção atual e histórico identificado nas bases</span>
+        <strong>Resumo dos Distratos</strong>
+        <span>Conciliação entre o Pós-Venda VIP e as bases atualizadas</span>
       </div>
     </div>
     <div class="hover-card-grid">
-      ${hoverDetail("Sua produção", `${production.length} desde 07/05/2026`)}
-      ${hoverDetail("Por inadimplência", manualDefault)}
-      ${hoverDetail("Outros motivos", manualOther)}
-      ${hoverDetail("Históricos importados", state.historicalTerminated.length)}
-      ${hoverDetail("Históricos com data", historicalWithDate)}
-      ${hoverDetail("Integralizado histórico", formatCurrency(state.historicalTerminated.reduce((total, item) => total + toNumber(item.effectivePaidValue), 0)))}
+      ${hoverDetail("Distratos Inadimplência", production.length)}
+      ${hoverDetail("Confirmados pela Atualização", confirmed)}
+      ${hoverDetail("Identificados na Atualização", identified)}
+      ${hoverDetail("Aguardando Confirmação", pending)}
+      ${hoverDetail("Total Conciliado", unified.length)}
+      ${hoverDetail("Recuperado", formatCurrency(production.reduce((total, item) => total + (item.hasRetention ? toNumber(item.retainedValue) : 0), 0)))}
     </div>
   `;
   card.hidden = false;
@@ -1871,11 +1986,42 @@ function showTerminationSummary(trigger) {
 }
 
 function getProductionTerminations() {
-  const productionStart = new Date("2026-05-07T00:00:00");
+  const productionStart = new Date("2026-05-06T00:00:00");
   return state.terminated.filter((item) => {
     const date = new Date(item.terminatedAt);
-    return !Number.isNaN(date.getTime()) && date >= productionStart;
+    return item.isDefaultTermination !== false
+      && !Number.isNaN(date.getTime())
+      && date >= productionStart;
   });
+}
+
+function getUnifiedTerminations() {
+  const manualIds = new Set(state.terminated.map((item) => item.contractId));
+  const manual = state.terminated.map((item) => ({
+    ...item,
+    reconciliationStatus: item.reconciliationStatus || "manual_pending",
+    sourceOnlyTermination: false,
+  }));
+  const identified = state.historicalTerminated
+    .filter((item) => !manualIds.has(item.contractId))
+    .map((item) => {
+      const reason = item.sourceTerminationReason || "Não informado";
+      return enrichContract({
+        ...item,
+        terminatedAt: item.sourceTerminationDate || item.sourceUpdatedAt || null,
+        terminationReason: reason,
+        terminationObservation: "",
+        terminationApproach: "nao_informada",
+        isDefaultTermination: normalizeReportText(reason).includes("inadimpl"),
+        hasRetention: false,
+        retainedValue: 0,
+        hasRefund: false,
+        refundValue: 0,
+        reconciliationStatus: "source_identified",
+        sourceOnlyTermination: true,
+      });
+    });
+  return [...manual, ...identified];
 }
 
 function renderHeatmap(contracts) {
@@ -2102,7 +2248,7 @@ function showImportReport({
     `),
   ];
   if (mergeReport) {
-    lines.push(`<div class="report-line success">Atualização concluída: ${mergeReport.inserted} ativos inseridos, ${mergeReport.updated} ativos atualizados, ${mergeReport.historicalTerminationsDetected} distratos históricos e ${mergeReport.reversionsDetected || 0} reversões segregadas.</div>`);
+    lines.push(`<div class="report-line success">Atualização concluída: ${mergeReport.inserted} ativos inseridos, ${mergeReport.updated} ativos atualizados, ${mergeReport.confirmedTerminations || 0} distratos confirmados, ${mergeReport.identifiedTerminations || 0} distratos identificados e ${mergeReport.reversionsDetected || 0} reversões segregadas.</div>`);
   }
   if (restartAssessment.required) {
     lines.push(
@@ -2253,12 +2399,18 @@ function showPostImportReport(report) {
   const lines = [
     `<div class="report-line success"><strong>Atualização concluída.</strong><br>${escapeHtml(report.fileName)} · ${report.totalRows} registros processados${report.restarted ? " após reinício do sistema" : " sem necessidade de reinício"}.</div>`,
     `<div class="report-heading">Mudanças na base de dados</div>`,
-    `<div class="report-line info">Ativos: ${report.previousSnapshot?.active ?? 0} → ${report.active} · Distratos históricos: ${report.previousSnapshot?.historical ?? 0} → ${report.historical} · Revertidos: ${report.previousSnapshot?.reverted ?? 0} → ${report.reverted} · Exceções: ${report.previousSnapshot?.exceptions ?? 0} → ${report.exceptions}.</div>`,
+    `<div class="report-line info">Ativos: ${report.previousSnapshot?.active ?? 0} → ${report.active} · Cancelamentos na fonte: ${report.previousSnapshot?.historical ?? 0} → ${report.historical} · Revertidos: ${report.previousSnapshot?.reverted ?? 0} → ${report.reverted} · Exceções: ${report.previousSnapshot?.exceptions ?? 0} → ${report.exceptions}.</div>`,
     `<div class="report-heading">Principais pontos</div>`,
     `<div class="report-line info">${escapeHtml(deltaText)}</div>`,
-    `<div class="report-line success">${report.active} contratos com status Ativo, ${report.historical} distratos históricos e ${report.reverted} reversões separados da carteira atual.</div>`,
-    `<div class="report-line success">${report.mergeReport.inserted} contratos inseridos, ${report.mergeReport.updated} atualizados e ${report.mergeReport.preservedTerminated} distratos da sua produção preservados.</div>`,
+    `<div class="report-line success">${report.active} contratos com status Ativo, ${report.historical} cancelamentos na fonte e ${report.reverted} reversões separados da carteira atual.</div>`,
+    `<div class="report-line success">${report.mergeReport.inserted} contratos inseridos, ${report.mergeReport.updated} atualizados e ${report.mergeReport.preservedTerminated} distratos do Pós-Venda VIP preservados.</div>`,
   ];
+  if (report.mergeReport.confirmedTerminations) {
+    lines.push(`<div class="report-line success"><strong>${report.mergeReport.confirmedTerminations} distratos confirmados através da atualização.</strong><br>Os lançamentos já existentes no Pós-Venda VIP foram conciliados pelo localizador, sem duplicação.</div>`);
+  }
+  if (report.mergeReport.identifiedTerminations) {
+    lines.push(`<div class="report-line info"><strong>${report.mergeReport.identifiedTerminations} distratos identificados na atualização.</strong><br>Eles foram incluídos na aba Distratos como registros originados na base.</div>`);
+  }
   if (report.ignoredRows.length) {
     lines.push(`<div class="report-line warning">${report.ignoredRows.length} linha de total foi reconhecida por múltiplos critérios e não foi importada como contrato.</div>`);
   }
@@ -2375,7 +2527,7 @@ function printTerminationReport(type) {
   }
   reportWindow.opener = null;
   const filterSummary = terminationFilterSummary();
-  const logoUrl = new URL("assets/logo.png", window.location.href).href;
+  const logoUrl = new URL("assets/shortcut-logo.png", window.location.href).href;
   const title = type === "formal" ? "Relatório de Distratos" : "Resumo Executivo de Distratos";
   const body = type === "formal"
     ? formalTerminationReportMarkup(contracts, totals)
@@ -2509,7 +2661,7 @@ function printExecutivePortfolioReport() {
     return;
   }
   reportWindow.opener = null;
-  const logoUrl = new URL("assets/logo.png", window.location.href).href;
+  const logoUrl = new URL("assets/shortcut-logo.png", window.location.href).href;
   const complianceRate = kpis.totalActive ? kpis.totalCurrent / kpis.totalActive : 0;
   const filterSummary = portfolioFilterSummary();
   reportWindow.document.write(`<!doctype html>
@@ -2525,18 +2677,19 @@ function printExecutivePortfolioReport() {
           <div><span>VILLAMOR · PÓS-VENDA VIP</span><h1>Relatório da Inadimplência</h1><p>Situação Atual da Inadimplência · Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p>${filterSummary ? `<small class="report-filter-summary">${escapeHtml(filterSummary)}</small>` : ""}</div>
         </header>
         <section class="executive-metrics">
-          ${reportMetric("Contratos ativos", kpis.totalActive, "", "Carteira filtrada")}
+          ${reportMetric("Contratos Ativos", kpis.totalActive, "", "Carteira filtrada")}
           ${reportMetric("Adimplentes", kpis.totalCurrent, "recovered", "Inclui quitados")}
           ${reportMetric("Inadimplentes", kpis.totalDefaulted, "danger", "90+ dias")}
-          ${reportMetric("Em atraso", kpis.totalLate, "refund", "Até 89 dias")}
-          ${reportMetric("Distratados", kpis.totalTerminated, "closed", "A partir de 07/05/2026")}
-          ${reportMetric("Recuperável", formatCurrency(kpis.recoverableValue), "", "Integralizado dos inadimplentes")}
+          ${reportMetric("Em Atraso", kpis.totalLate, "refund", "Até 89 dias")}
+          ${reportMetric("Distratos Inadimplência", kpis.totalTerminated, "closed", `Usuário: ${state.currentUser}`)}
+          ${reportMetric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "navy", "Integralizado dos inadimplentes")}
+          ${reportMetric("Recuperado", formatCurrency(kpis.retainedTotal), "cyan", "Valor efetivamente retido")}
           ${reportMetric("Carteira", formatCurrency(kpis.totalPortfolio), "", "Valor total")}
           ${reportMetric("Inadimplência", formatCurrency(kpis.totalOverdue), "danger", "Valor atrasado")}
-          ${reportMetric("% inadimplência", formatPercent(kpis.defaultRate), "", "Sobre carteira")}
-          ${reportMetric("Ticket médio", formatCurrency(kpis.averageTicket), "", "Contratos ativos")}
-          ${reportMetric("% distratos", formatPercent(kpis.terminationRate), "closed", "Total acompanhado")}
-          ${reportMetric("Aging médio", `${Math.round(kpis.averageAging)} dias`, "", `${kpis.aging90Plus} contratos 90+ dias`)}
+          ${reportMetric("% Inadimplência", formatPercent(kpis.defaultRate), "", "Sobre carteira")}
+          ${reportMetric("Ticket Médio", formatCurrency(kpis.averageTicket), "", "Contratos ativos")}
+          ${reportMetric("% Distratos", formatPercent(kpis.terminationRate), "closed", "Por inadimplência")}
+          ${reportMetric("Aging Médio", `${Math.round(kpis.averageAging)} dias`, "", `${kpis.aging90Plus} contratos 90+ dias`)}
         </section>
         ${executiveProgressMarkup(complianceRate, kpis.totalCurrent, kpis.totalActive)}
         ${executiveAgingMarkup(aging)}
@@ -2566,7 +2719,7 @@ function labeledFilter(id, label) {
 }
 
 function selectedOptionLabel(id, ignoredValue) {
-  const select = document.getElementById(id);
+  const select = typeof id === "string" ? document.getElementById(id) : id;
   if (!select || select.value === ignoredValue) return "";
   return select.selectedOptions[0]?.textContent?.trim() || select.value;
 }
@@ -2604,7 +2757,92 @@ function executiveAgingMarkup(rows) {
 
 function executivePortfolioReportStyles() {
   return `
-    @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;color:#22262b;font:11px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:14px;padding-bottom:11px;border-bottom:3px solid #a62552}header img{width:58px;height:58px;border-radius:7px;object-fit:cover}header span,.portfolio-progress span,.aging-heading span{font-size:9px;font-weight:800;color:#a62552}h1{margin:3px 0;font-size:22px}header p,.portfolio-progress p{margin:0;color:#687078}.report-filter-summary{display:block;margin-top:4px;color:#8b596a;font-size:8px;font-weight:700}.executive-metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin:12px 0}.report-metric{min-height:72px;padding:9px;border:1px solid #d9dde1;border-bottom:4px solid #a62552;border-radius:5px;background:#fff}.report-metric span{display:block;color:#8f2349;font-size:8px;font-weight:800;text-transform:uppercase}.report-metric strong{display:block;margin-top:5px;font-size:15px}.report-metric small{display:block;margin-top:4px;color:#667079;font-size:8px}.report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}.report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}.report-metric.tone-danger{border-color:#efbdc7;border-bottom-color:#c72d4c;background:#fff4f6}.report-metric.tone-danger span{color:#b51f40}.report-metric.tone-closed{border-color:#d3d5d7;border-bottom-color:#7d858c;background:linear-gradient(135deg,#f1f2f2,#fffdf6)}.report-metric.tone-closed span{color:#596168}.portfolio-progress{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:12px 14px;border:1px solid #d8dde1;border-radius:6px;background:#f8fafb}.portfolio-progress h2,.aging-heading h2{margin:3px 0;font-size:17px}.portfolio-progress>strong{align-self:center;color:#087a49;font-size:25px}.progress-track{grid-column:1/-1;height:11px;overflow:hidden;border-radius:6px;background:#dfe4e7}.progress-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#087a49,#45d79a)}.aging-report{margin-top:10px;padding:11px 14px;border:1px solid #d8dde1;border-radius:6px}.aging-heading{display:flex;align-items:flex-end;justify-content:space-between}.aging-heading small{color:#687078}.aging-bars{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;height:140px;margin-top:8px;padding:4px 18px 0;border-bottom:1px solid #cfd5d9;background:repeating-linear-gradient(to top,transparent 0,transparent 27px,#e8ebed 28px)}.aging-bars article{display:grid;grid-template-rows:15px 1fr 15px 13px;min-width:0;text-align:center}.aging-bars strong{font-size:11px}.aging-column{display:flex;align-items:flex-end;justify-content:center;height:92px}.aging-column i{display:block;width:62%;min-height:2px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#e36767,#c74451)}.aging-bars span{font-weight:700}.aging-bars small{overflow:hidden;color:#687078;font-size:7px;text-overflow:ellipsis;white-space:nowrap}footer{margin-top:9px;padding-top:6px;border-top:1px solid #ddd;color:#737b82;font-size:8px;text-align:center}@media print{button{display:none}}`;
+    @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;color:#22262b;font:11px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:14px;padding-bottom:11px;border-bottom:3px solid #a62552}header img{width:58px;height:58px;border-radius:7px;object-fit:cover}header span,.portfolio-progress span,.aging-heading span{font-size:9px;font-weight:800;color:#a62552}h1{margin:3px 0;font-size:22px}header p,.portfolio-progress p{margin:0;color:#687078}.report-filter-summary{display:block;margin-top:4px;color:#8b596a;font-size:8px;font-weight:700}.executive-metrics{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin:12px 0}.report-metric{min-height:72px;padding:9px;border:1px solid #d9dde1;border-bottom:4px solid #a62552;border-radius:5px;background:#fff}.report-metric span{display:block;color:#8f2349;font-size:8px;font-weight:800;text-transform:uppercase}.report-metric strong{display:block;margin-top:5px;font-size:15px}.report-metric small{display:block;margin-top:4px;color:#667079;font-size:8px}.report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}.report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}.report-metric.tone-danger{border-color:#efbdc7;border-bottom-color:#c72d4c;background:#fff4f6}.report-metric.tone-danger span{color:#b51f40}.report-metric.tone-closed{border-color:#d3d5d7;border-bottom-color:#7d858c;background:linear-gradient(135deg,#f1f2f2,#fffdf6)}.report-metric.tone-closed span{color:#596168}.report-metric.tone-navy{border-color:#9bb6d0;border-bottom-color:#173d63;background:#f1f6fb}.report-metric.tone-navy span{color:#173d63}.report-metric.tone-cyan{border-color:#9ddde5;border-bottom-color:#079bb1;background:#effbfd}.report-metric.tone-cyan span{color:#087f91}.portfolio-progress{display:grid;grid-template-columns:1fr auto;gap:4px 16px;padding:12px 14px;border:1px solid #d8dde1;border-radius:6px;background:#f8fafb}.portfolio-progress h2,.aging-heading h2{margin:3px 0;font-size:17px}.portfolio-progress>strong{align-self:center;color:#087a49;font-size:25px}.progress-track{grid-column:1/-1;height:11px;overflow:hidden;border-radius:6px;background:#dfe4e7}.progress-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#087a49,#45d79a)}.aging-report{margin-top:10px;padding:11px 14px;border:1px solid #d8dde1;border-radius:6px}.aging-heading{display:flex;align-items:flex-end;justify-content:space-between}.aging-heading small{color:#687078}.aging-bars{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;height:140px;margin-top:8px;padding:4px 18px 0;border-bottom:1px solid #cfd5d9;background:repeating-linear-gradient(to top,transparent 0,transparent 27px,#e8ebed 28px)}.aging-bars article{display:grid;grid-template-rows:15px 1fr 15px 13px;min-width:0;text-align:center}.aging-bars strong{font-size:11px}.aging-column{display:flex;align-items:flex-end;justify-content:center;height:92px}.aging-column i{display:block;width:62%;min-height:2px;border-radius:6px 6px 0 0;background:linear-gradient(180deg,#e36767,#c74451)}.aging-bars span{font-weight:700}.aging-bars small{overflow:hidden;color:#687078;font-size:7px;text-overflow:ellipsis;white-space:nowrap}footer{margin-top:9px;padding-top:6px;border-top:1px solid #ddd;color:#737b82;font-size:8px;text-align:center}@media print{button{display:none}}`;
+}
+
+function syncProfileSummary() {
+  document.getElementById("currentUserLabel").textContent = state.currentUser;
+  document.getElementById("currentUserJobTitle").textContent = state.currentJobTitle || roleLabel(state.currentRole);
+  document.getElementById("currentUserAvatar").src = state.currentAvatarUrl || "assets/shortcut-logo.png";
+}
+
+function openProfileDialog() {
+  state.profileAvatarDraft = state.currentAvatarUrl;
+  document.getElementById("profileDisplayName").value = state.currentUser;
+  document.getElementById("profileJobTitle").value = state.currentJobTitle;
+  document.getElementById("profileAvatarPreview").src = state.currentAvatarUrl || "assets/shortcut-logo.png";
+  document.getElementById("profileAvatarInput").value = "";
+  document.getElementById("profileDialog").showModal();
+}
+
+function closeProfileDialog() {
+  document.getElementById("profileDialog").close();
+}
+
+async function handleProfileAvatar(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    state.profileAvatarDraft = await resizeProfileImage(file);
+    document.getElementById("profileAvatarPreview").src = state.profileAvatarDraft;
+  } catch (error) {
+    toast(`Não foi possível preparar a foto: ${error.message}`);
+  }
+}
+
+async function saveProfile(event) {
+  event.preventDefault();
+  const displayName = document.getElementById("profileDisplayName").value.trim();
+  const jobTitle = document.getElementById("profileJobTitle").value.trim();
+  if (displayName.length < 2) {
+    toast("Informe um nome com pelo menos 2 caracteres.");
+    return;
+  }
+  try {
+    const updated = await db.updateProfile({
+      displayName,
+      jobTitle,
+      avatarUrl: state.profileAvatarDraft,
+    });
+    state.currentUser = updated?.display_name || displayName;
+    state.currentJobTitle = updated?.job_title || jobTitle;
+    state.currentAvatarUrl = updated?.avatar_url || state.profileAvatarDraft || "";
+    syncProfileSummary();
+    closeProfileDialog();
+    renderExecutive();
+    toast("Perfil atualizado.");
+  } catch (error) {
+    toast(`Não foi possível atualizar o perfil: ${error.message}`);
+  }
+}
+
+function resizeProfileImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      reject(new Error("use uma imagem PNG, JPG ou WebP."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("não foi possível ler o arquivo."));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("a imagem é inválida."));
+      image.onload = () => {
+        const size = 256;
+        const scale = Math.max(size / image.width, size / image.height);
+        const width = image.width * scale;
+        const height = image.height * scale;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const context = canvas.getContext("2d");
+        context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+        resolve(canvas.toDataURL("image/webp", 0.82));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 async function changeUser() {
@@ -2616,7 +2854,7 @@ async function changeUser() {
   const nextUser = prompt("Nome do usuário local", state.currentUser);
   if (!nextUser?.trim()) return;
   state.currentUser = nextUser.trim();
-  document.getElementById("currentUserLabel").textContent = state.currentUser;
+  syncProfileSummary();
   await db.setSetting("currentUser", state.currentUser);
   toast("Usuário local atualizado.");
 }
