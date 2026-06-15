@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260615-1">
+  <link rel="stylesheet" href="css/style.css?v=20260615-2">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260615-1" type="module"></script>
+  <script src="js/app.js?v=20260615-2" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -199,7 +199,7 @@
         </div>
 
         <div class="metrics-row" id="operationalKpis" aria-live="polite"></div>
-        <button class="secondary-button kpi-disclosure-button" id="operationalKpiToggle" type="button" aria-expanded="false">Ver todos os indicadores</button>
+        <button class="secondary-button kpi-disclosure-button" id="operationalKpiToggle" type="button" aria-expanded="true" hidden>Ver todos os indicadores</button>
 
         <div class="table-shell">
           <div class="bulk-selection-bar" id="bulkSelectionBar" aria-live="polite" hidden>
@@ -334,7 +334,6 @@
                   <th scope="col">Abordagem</th>
                   <th scope="col">Valor retido</th>
                   <th scope="col">Reembolso</th>
-                  <th scope="col">Observação</th>
                   <th scope="col">Responsável</th>
                   <th scope="col">Origem</th>
                   <th scope="col">Ação</th>

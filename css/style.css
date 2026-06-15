@@ -1940,6 +1940,214 @@ body.filter-dock-active .toast-host {
   }
 }
 
+/* Refinamento final dos indicadores, tabelas e anotacoes. */
+.sidebar::before {
+  inset: 16% -8% 5%;
+  height: auto;
+  background-position: center;
+  background-size: contain;
+  opacity: 0.1;
+  filter: saturate(0.9);
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 20%, rgba(0, 0, 0, 0.88) 42%, transparent 78%);
+  mask-image: radial-gradient(ellipse at center, #000 20%, rgba(0, 0, 0, 0.88) 42%, transparent 78%);
+}
+
+#operationalKpis {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+#operationalKpis .metric-card,
+#executivePrimaryKpis .metric-card {
+  min-width: 0;
+}
+
+#operationalKpis .metric-card > span,
+#executivePrimaryKpis .metric-card > span,
+#terminationKpis .metric-card > span {
+  text-transform: uppercase;
+}
+
+#operationalKpis .metric-card-brand::after,
+#executivePrimaryKpis .metric-card-brand::after {
+  height: 6px;
+  background: linear-gradient(90deg, #8f1f4a 0%, #db4d75 52%, #ff9b93 100%);
+  box-shadow: 0 -2px 9px rgba(219, 77, 117, 0.76), 0 -7px 20px rgba(219, 77, 117, 0.28);
+}
+
+#operationalKpis .metric-card-brand > span,
+#executivePrimaryKpis .metric-card-brand > span {
+  color: #b32657;
+  text-shadow: 0 0 12px rgba(219, 77, 117, 0.38);
+}
+
+#operationalKpis .metric-card-success::after,
+#executivePrimaryKpis .metric-card-success::after {
+  height: 6px;
+  background: linear-gradient(90deg, #04794a 0%, #12bd70 52%, #7af0b5 100%);
+  box-shadow: 0 -2px 9px rgba(18, 189, 112, 0.78), 0 -7px 20px rgba(18, 189, 112, 0.28);
+}
+
+#operationalKpis .metric-card-warning::after,
+#executivePrimaryKpis .metric-card-warning::after {
+  height: 6px;
+  background: linear-gradient(90deg, #a96c00 0%, #efad17 52%, #ffe189 100%);
+  box-shadow: 0 -2px 9px rgba(239, 173, 23, 0.78), 0 -7px 20px rgba(239, 173, 23, 0.3);
+}
+
+#operationalKpis .metric-card-danger::after,
+#executivePrimaryKpis .metric-card-danger::after {
+  height: 6px;
+  background: linear-gradient(90deg, #9b1839 0%, #e23e62 52%, #ff9cad 100%);
+  box-shadow: 0 -2px 9px rgba(226, 62, 98, 0.8), 0 -7px 20px rgba(226, 62, 98, 0.32);
+}
+
+#executivePrimaryKpis .metric-card-closed::after {
+  height: 6px;
+  background: linear-gradient(90deg, #676d74 0%, #aeb3b4 54%, #fff8e8 100%);
+  box-shadow: 0 -2px 9px rgba(174, 179, 180, 0.72), 0 -7px 20px rgba(220, 218, 207, 0.26);
+}
+
+#operationalKpis .metric-card-navy::after,
+#executivePrimaryKpis .metric-card-navy::after {
+  height: 6px;
+  background: linear-gradient(90deg, #0b2238 0%, #1b4d77 52%, #80b8e4 100%);
+  box-shadow: 0 -2px 9px rgba(36, 91, 136, 0.82), 0 -7px 20px rgba(36, 91, 136, 0.32);
+}
+
+#operationalKpis .metric-card-navy > span,
+#executivePrimaryKpis .metric-card-navy > span {
+  color: #245b88;
+  text-shadow: 0 0 12px rgba(36, 91, 136, 0.44);
+}
+
+#executivePrimaryKpis .metric-card-cyan::after {
+  height: 6px;
+  background: linear-gradient(90deg, #078b83 0%, #27c9ae 54%, #bfffe5 100%);
+  box-shadow: 0 -2px 9px rgba(39, 201, 174, 0.82), 0 -7px 20px rgba(39, 201, 174, 0.32);
+}
+
+#executivePrimaryKpis .metric-card-cyan > span {
+  color: #159e8d;
+  text-shadow: 0 0 13px rgba(39, 201, 174, 0.5);
+}
+
+[data-theme="dark"] #operationalKpis .metric-card-brand > span,
+[data-theme="dark"] #executivePrimaryKpis .metric-card-brand > span {
+  color: #ff81a7;
+}
+
+[data-theme="dark"] #operationalKpis .metric-card-navy > span,
+[data-theme="dark"] #executivePrimaryKpis .metric-card-navy > span {
+  color: #91c7f1;
+}
+
+[data-theme="dark"] #executivePrimaryKpis .metric-card-cyan > span {
+  color: #7bf0d5;
+}
+
+.operational-row-actions {
+  display: table-cell;
+  min-width: 132px;
+  vertical-align: middle;
+}
+
+.operational-action-group,
+.mobile-contract-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.data-table tbody tr.is-annotating,
+.mobile-contract-card.is-annotating {
+  background: color-mix(in srgb, #3268b8 6%, var(--surface));
+  box-shadow: inset 2px 0 0 rgba(50, 104, 184, 0.68);
+}
+
+.annotation-action-menu {
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px;
+  border-color: var(--line);
+  box-shadow: 0 12px 28px rgba(25, 34, 48, 0.18);
+}
+
+.annotation-menu-preview {
+  max-height: 88px;
+  margin: 9px 0;
+  padding: 8px 10px;
+  border-left-width: 2px;
+  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
+  font-size: 12px;
+}
+
+.annotation-menu-actions button,
+.annotation-editor > div button {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.termination-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#terminationsPanel .data-table {
+  min-width: 1040px;
+}
+
+#terminationsPanel .data-table th,
+#terminationsPanel .data-table td {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+#terminationsPanel .data-table th {
+  line-height: 1.2;
+  white-space: normal;
+}
+
+#terminationsPanel .data-table th:nth-child(1),
+#terminationsPanel .data-table td:nth-child(1) {
+  min-width: 112px;
+}
+
+#terminationsPanel .data-table th:nth-child(2),
+#terminationsPanel .data-table td:nth-child(2) {
+  min-width: 145px;
+}
+
+#terminationsPanel .data-table th:nth-child(10),
+#terminationsPanel .data-table td:nth-child(10) {
+  min-width: 92px;
+}
+
+.termination-row-actions {
+  position: static;
+  min-width: 118px;
+  box-shadow: none;
+}
+
+#terminationsPanel .data-table th:last-child {
+  position: static;
+}
+
+@media (max-width: 1180px) {
+  #operationalKpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  #operationalKpis,
+  .termination-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .annotation-action-menu {
+    width: auto;
+  }
+}
+
 .financial-switches {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4707,4 +4915,47 @@ body.presentation-mode .dashboard-report-area > .section-header {
     top: 8px;
     right: 8px;
   }
+}
+
+/* Mantem os destaques acima da camada premium declarada anteriormente. */
+#operationalKpis .metric-card-brand::after,
+#executivePrimaryKpis .metric-card-brand::after {
+  height: 6px;
+  background: linear-gradient(90deg, #8f1f4a 0%, #db4d75 52%, #ff9b93 100%);
+  box-shadow: 0 -2px 9px rgba(219, 77, 117, 0.76), 0 -7px 20px rgba(219, 77, 117, 0.28);
+}
+
+#operationalKpis .metric-card-navy::after,
+#executivePrimaryKpis .metric-card-navy::after {
+  height: 6px;
+  background: linear-gradient(90deg, #0b2238 0%, #1b4d77 52%, #80b8e4 100%);
+  box-shadow: 0 -2px 9px rgba(36, 91, 136, 0.82), 0 -7px 20px rgba(36, 91, 136, 0.32);
+}
+
+#executivePrimaryKpis .metric-card-cyan::after {
+  height: 6px;
+  background: linear-gradient(90deg, #078b83 0%, #27c9ae 54%, #bfffe5 100%);
+  box-shadow: 0 -2px 9px rgba(39, 201, 174, 0.82), 0 -7px 20px rgba(39, 201, 174, 0.32);
+}
+
+.termination-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .termination-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+#terminationsPanel .termination-row-actions,
+[data-theme="dark"] #terminationsPanel .termination-row-actions {
+  position: static;
+  min-width: 118px;
+  background: var(--surface);
+  box-shadow: none;
+}
+
+#terminationsPanel .data-table th:last-child {
+  position: static;
 }

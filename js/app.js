@@ -836,17 +836,17 @@ function sortBy(key) {
 function renderOperationalKpis() {
   const kpis = calculateKpis(state.filtered, state.terminated);
   document.getElementById("operationalKpis").innerHTML = [
-    metric("Contratos filtrados", kpis.totalActive, "Base ativa", "", "", "operational-secondary-kpi"),
+    metric("Contratos Ativos", kpis.totalActive, "Carteira filtrada", "brand", "", "operational-primary-kpi"),
     metric("Inadimplentes", kpis.totalDefaulted, formatPercent(kpis.totalActive ? kpis.totalDefaulted / kpis.totalActive : 0), "danger", "", "operational-primary-kpi"),
-    metric("Valor atrasado", formatCurrency(kpis.totalOverdue), "Exposição financeira", "danger", "", "operational-primary-kpi"),
-    metric("Aging médio", `${Math.round(kpis.averageAging)} dias`, "Pela data próximo vencimento", "", "", "operational-secondary-kpi"),
-    metric("Aging 90+ dias", kpis.aging90Plus, "Prioridade alta", "warning", "", "operational-secondary-kpi"),
-    metric("Aging 180+ dias", kpis.aging180Plus, "Risco crítico", "danger", "", "operational-primary-kpi"),
+    metric("Aging 90+ Dias", kpis.aging90Plus, "Prioridade alta", "warning", "", "operational-primary-kpi"),
+    metric("Aging 180+ Dias", kpis.aging180Plus, "Risco crítico", "danger", "", "operational-primary-kpi"),
+    metric("Aging Médio", `${Math.round(kpis.averageAging)} dias`, "Pela data próximo vencimento", "brand", "", "operational-primary-kpi"),
+    metric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes", "navy", "", "operational-primary-kpi"),
   ].join("");
-  document.getElementById("operationalKpis").classList.toggle("show-all", state.operationalKpisExpanded);
+  document.getElementById("operationalKpis").classList.add("show-all");
   const toggle = document.getElementById("operationalKpiToggle");
-  toggle.setAttribute("aria-expanded", String(state.operationalKpisExpanded));
-  toggle.textContent = state.operationalKpisExpanded ? "Ver indicadores essenciais" : "Ver todos os indicadores";
+  toggle.hidden = true;
+  toggle.setAttribute("aria-expanded", "true");
 }
 
 function renderExecutive() {
@@ -855,16 +855,16 @@ function renderExecutive() {
   const kpis = calculateKpis(active, defaultTerminations);
   document.getElementById("dashboardDate").textContent = `Atualizado em ${formatDate(new Date().toISOString())}`;
   document.getElementById("executivePrimaryKpis").innerHTML = [
-    metric("Contratos Ativos", kpis.totalActive, "Carteira filtrada"),
+    metric("Contratos Ativos", kpis.totalActive, "Carteira filtrada", "brand"),
     metric("Adimplentes", kpis.totalCurrent, "Inclui quitados", "success"),
-    metric("Inadimplentes", kpis.totalDefaulted, "90+ dias", "danger"),
     metric("Em Atraso", kpis.totalLate, "Até 89 dias", "warning"),
+    metric("Inadimplentes", kpis.totalDefaulted, "90+ dias", "danger"),
     metric("Distratos Inadimplência", kpis.totalTerminated, `Usuário: ${state.currentUser}`, "closed", "terminatedMetricCard"),
-    metric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes", "navy"),
     metric("Recuperado", formatCurrency(kpis.retainedTotal), "Valor efetivamente retido", "cyan"),
+    metric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes", "navy"),
+    metric("Carteira", formatCurrency(kpis.totalPortfolio), "Valor total", "brand"),
   ].join("");
   document.getElementById("executiveKpis").innerHTML = [
-    metric("Carteira", formatCurrency(kpis.totalPortfolio), "Valor total"),
     metric("Inadimplência", formatCurrency(kpis.totalOverdue), "Valor em atraso", "danger"),
     metric("% Inadimplência", formatPercent(kpis.defaultRate), "Sobre a carteira", "danger"),
     metric("Ticket Médio", formatCurrency(kpis.averageTicket), "Ativos"),
@@ -981,8 +981,10 @@ function renderContractRow(contract) {
       <td>${contract.daysOverdue}</td>
       <td><span class="status-badge status-${escapeAttr(slugStatus(contract.appStatus))}">${escapeHtml(contract.appStatus)}</span></td>
       <td class="operational-row-actions">
-        ${state.canWrite ? '<button class="danger-button compact terminate-row-button" type="button">Distratar</button>' : ""}
-        ${contract.notes ? '<button class="annotation-marker" type="button" aria-label="Exibir anotação" title="Exibir anotação"><span aria-hidden="true">●</span></button>' : ""}
+        <div class="operational-action-group">
+          ${state.canWrite ? '<button class="danger-button compact terminate-row-button" type="button">Distratar</button>' : ""}
+          ${contract.notes ? '<button class="annotation-marker" type="button" aria-label="Exibir anotação" title="Exibir anotação"><span aria-hidden="true">●</span></button>' : ""}
+        </div>
       </td>
     </tr>
   `;
@@ -1044,6 +1046,7 @@ function bindTableRows() {
     });
     row.addEventListener("click", (event) => {
       if (event.target.closest("button, input, a, select, textarea")) return;
+      event.stopPropagation();
       selectContractForAnnotation(contract, row);
     });
     const clientTrigger = row.querySelector(".client-hover-trigger");
@@ -1108,11 +1111,9 @@ async function handleNotesChange(contract, notes, statusElement = null) {
 }
 
 function selectContractForAnnotation(contract, trigger) {
-  state.selected.add(contract.contractId);
-  syncSelectionInputs(contract.contractId);
+  document.querySelectorAll(".is-annotating").forEach((element) => element.classList.remove("is-annotating"));
   document.querySelectorAll(`[data-contract-id="${CSS.escape(contract.contractId)}"]`)
-    .forEach((element) => element.classList.add("is-selected"));
-  renderSelectionBar();
+    .forEach((element) => element.classList.add("is-annotating"));
   state.annotationContract = contract;
   syncAnnotationMenu();
   positionAnnotationMenu(trigger);
@@ -1175,6 +1176,7 @@ async function removeAnnotation() {
 
 function closeAnnotationMenu() {
   document.getElementById("annotationActionMenu").hidden = true;
+  document.querySelectorAll(".is-annotating").forEach((element) => element.classList.remove("is-annotating"));
   state.annotationContract = null;
 }
 
@@ -1659,9 +1661,6 @@ function renderTerminatedTable() {
     metric("Distratos", totals.count, "No período filtrado", "closed"),
     metric("Recuperado", formatCurrency(totals.retained), "Valor efetivamente retido", "success"),
     metric("Reembolsado", formatCurrency(totals.refunded), "Valor devolvido ao cliente", "warning"),
-    metric("Integralizado", formatCurrency(totals.integralized), "Antes do distrato"),
-    metric("Retenção média", formatCurrency(totals.averageRetention), "Por distrato"),
-    metric("% de retenção", formatPercent(totals.retentionRate), "Sobre o integralizado"),
   ].join("");
   document.getElementById("terminationConsolidated").innerHTML = terminationConsolidatedMarkup(contracts);
   document.getElementById("terminatedTableBody").innerHTML = contracts.map((contract) => `
@@ -1674,7 +1673,6 @@ function renderTerminatedTable() {
       <td>${approachLabel(contract.terminationApproach)}</td>
       <td>${contract.hasRetention ? formatCurrency(contract.retainedValue) : "Não houve"}</td>
       <td>${contract.hasRefund ? formatCurrency(contract.refundValue) : "Não houve"}</td>
-      <td class="termination-observation-cell">${escapeHtml(contract.terminationObservation || "-")}</td>
       <td>${escapeHtml(contract.terminatedBy || "-")}</td>
       <td><span class="reconciliation-badge reconciliation-${escapeAttr(contract.reconciliationStatus)}">${escapeHtml(reconciliationLabel(contract.reconciliationStatus))}</span></td>
       <td class="termination-row-actions">
@@ -1684,7 +1682,7 @@ function renderTerminatedTable() {
         </div>
       </td>
     </tr>
-  `).join("") || emptyRow(12, "Nenhum distrato encontrado para estes filtros.");
+  `).join("") || emptyRow(11, "Nenhum distrato encontrado para estes filtros.");
   document.querySelectorAll(".edit-termination-button").forEach((button) => {
     button.addEventListener("click", () => {
       const contract = state.terminated.find((item) => item.contractId === button.dataset.id);
@@ -2558,19 +2556,15 @@ function formalTerminationReportMarkup(contracts, totals) {
       ${reportMetric("Distratos", totals.count, "closed")}
       ${reportMetric("Recuperado", formatCurrency(totals.retained), "recovered")}
       ${reportMetric("Reembolsado", formatCurrency(totals.refunded), "refund")}
-      ${reportMetric("Integralizado", formatCurrency(totals.integralized))}
-      ${reportMetric("Retenção média", formatCurrency(totals.averageRetention))}
-      ${reportMetric("% de retenção", formatPercent(totals.retentionRate))}
     </section>
     <table>
-      <thead><tr><th>Contrato / Cliente</th><th>Data</th><th>Motivo</th><th>Abordagem</th><th>Integralizado</th><th>Retido</th><th>Reembolso</th><th>Responsável</th></tr></thead>
+      <thead><tr><th>Contrato / Cliente</th><th>Data</th><th>Motivo</th><th>Abordagem</th><th>Retido</th><th>Reembolso</th><th>Responsável</th></tr></thead>
       <tbody>${contracts.map((contract) => `
         <tr>
           <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong><br>${escapeHtml(contract.primaryClient || "-")}</td>
           <td>${escapeHtml(formatDate(contract.terminatedAt))}</td>
           <td>${escapeHtml(contract.terminationReason || "Não informado")}<small>${escapeHtml(contract.terminationObservation || "")}</small></td>
           <td>${escapeHtml(approachLabel(contract.terminationApproach))}</td>
-          <td>${escapeHtml(formatCurrency(contract.effectivePaidValue))}</td>
           <td>${escapeHtml(contract.hasRetention ? formatCurrency(contract.retainedValue) : "-")}</td>
           <td>${escapeHtml(contract.hasRefund ? formatCurrency(contract.refundValue) : "-")}</td>
           <td>${escapeHtml(contract.terminatedBy || "-")}</td>
@@ -2594,10 +2588,9 @@ function executiveTerminationReportMarkup(contracts, totals) {
       <strong>${escapeHtml(formatCurrency(totals.retained))}<small>recuperado por retenção</small></strong>
     </section>
     <section class="summary-grid executive">
-      ${reportMetric("Integralizado", formatCurrency(totals.integralized))}
+      ${reportMetric("Distratos", totals.count, "closed")}
+      ${reportMetric("Recuperado", formatCurrency(totals.retained), "recovered")}
       ${reportMetric("Reembolsado", formatCurrency(totals.refunded), "refund")}
-      ${reportMetric("Retenção média", formatCurrency(totals.averageRetention))}
-      ${reportMetric("Taxa de retenção", formatPercent(totals.retentionRate), "recovered")}
     </section>
     <section class="report-columns">
       <article><h3>Principais motivos</h3>${reportBars(reasons, contracts.length)}</article>
@@ -2647,7 +2640,7 @@ function terminationFilterSummary() {
 
 function terminationReportStyles() {
   return `
-    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;color:#29191e;font:12px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #a62552}header img{width:64px;height:64px;border-radius:8px;object-fit:cover}header span{font-size:10px;font-weight:700;color:#a62552}h1{margin:3px 0;font-size:24px}header p{margin:0;color:#6f6267}.summary-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:16px 0}.summary-grid.executive{grid-template-columns:repeat(4,1fr)}.report-metric{padding:12px;border:1px solid #dfd5d9;border-bottom:4px solid #a62552;border-radius:6px;background:#fff}.report-metric span{display:block;color:#8f2349;font-size:10px;font-weight:700;text-transform:uppercase}.report-metric strong{display:block;margin-top:6px;font-size:17px}.report-metric small{display:block;margin-top:5px;color:#75666c;font-size:9px}.report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}.report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}.report-metric.tone-closed{border-color:#d3d5d7;border-bottom-color:#7d858c;background:linear-gradient(135deg,#f1f2f2,#fffdf6)}.report-metric.tone-closed span{color:#596168}table{width:100%;border-collapse:collapse;font-size:9px}th{padding:7px;background:#3c2029;color:#fff;text-align:left}td{padding:7px;border-bottom:1px solid #e5dde0;vertical-align:top}td small{display:block;margin-top:3px;color:#766970}.report-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.report-columns article,.attention-box,.hero-summary{padding:16px;border:1px solid #ded3d7;border-radius:7px}h3{margin:0 0 12px}.report-bar{margin:9px 0}.report-bar div{display:flex;justify-content:space-between}.report-bar i{display:block;height:5px;margin-top:4px;border-radius:3px;background:linear-gradient(90deg,#98244c,#e25c72)}.hero-summary{display:flex;justify-content:space-between;align-items:center;margin:16px 0;background:#342027;color:#fff}.hero-summary span{font-size:10px;color:#f09bad}.hero-summary h2{margin:5px 0;font-size:24px}.hero-summary p{margin:0;color:#dacbd0}.hero-summary>strong{font-size:28px;color:#70d9a6;text-align:right}.hero-summary>strong small{display:block;font-size:10px;color:#fff}.attention-box{margin-top:16px;background:#fff8fa}.attention-box p{margin:8px 0}footer{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;color:#776a6f;font-size:9px;text-align:center}@media print{button{display:none}}`;
+    @page{size:A4 landscape;margin:12mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}body{margin:0;color:#29191e;font:12px Arial,sans-serif;background:#fff}header{display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:3px solid #a62552}header img{width:64px;height:64px;border-radius:8px;object-fit:cover}header span{font-size:10px;font-weight:700;color:#a62552}h1{margin:3px 0;font-size:24px}header p{margin:0;color:#6f6267}.summary-grid,.summary-grid.executive{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}.report-metric{padding:12px;border:1px solid #dfd5d9;border-bottom:4px solid #a62552;border-radius:6px;background:#fff}.report-metric span{display:block;color:#8f2349;font-size:10px;font-weight:700;text-transform:uppercase}.report-metric strong{display:block;margin-top:6px;font-size:17px}.report-metric small{display:block;margin-top:5px;color:#75666c;font-size:9px}.report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}.report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}.report-metric.tone-closed{border-color:#d3d5d7;border-bottom-color:#7d858c;background:linear-gradient(135deg,#f1f2f2,#fffdf6)}.report-metric.tone-closed span{color:#596168}table{width:100%;border-collapse:collapse;font-size:9px}th{padding:7px;background:#3c2029;color:#fff;text-align:left}td{padding:7px;border-bottom:1px solid #e5dde0;vertical-align:top}td small{display:block;margin-top:3px;color:#766970}.report-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px}.report-columns article,.attention-box,.hero-summary{padding:16px;border:1px solid #ded3d7;border-radius:7px}h3{margin:0 0 12px}.report-bar{margin:9px 0}.report-bar div{display:flex;justify-content:space-between}.report-bar i{display:block;height:5px;margin-top:4px;border-radius:3px;background:linear-gradient(90deg,#98244c,#e25c72)}.hero-summary{display:flex;justify-content:space-between;align-items:center;margin:16px 0;background:#342027;color:#fff}.hero-summary span{font-size:10px;color:#f09bad}.hero-summary h2{margin:5px 0;font-size:24px}.hero-summary p{margin:0;color:#dacbd0}.hero-summary>strong{font-size:28px;color:#70d9a6;text-align:right}.hero-summary>strong small{display:block;font-size:10px;color:#fff}.attention-box{margin-top:16px;background:#fff8fa}.attention-box p{margin:8px 0}footer{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;color:#776a6f;font-size:9px;text-align:center}@media print{button{display:none}}`;
 }
 
 function printExecutivePortfolioReport() {
@@ -2679,11 +2672,11 @@ function printExecutivePortfolioReport() {
         <section class="executive-metrics">
           ${reportMetric("Contratos Ativos", kpis.totalActive, "", "Carteira filtrada")}
           ${reportMetric("Adimplentes", kpis.totalCurrent, "recovered", "Inclui quitados")}
-          ${reportMetric("Inadimplentes", kpis.totalDefaulted, "danger", "90+ dias")}
           ${reportMetric("Em Atraso", kpis.totalLate, "refund", "Até 89 dias")}
+          ${reportMetric("Inadimplentes", kpis.totalDefaulted, "danger", "90+ dias")}
           ${reportMetric("Distratos Inadimplência", kpis.totalTerminated, "closed", `Usuário: ${state.currentUser}`)}
-          ${reportMetric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "navy", "Integralizado dos inadimplentes")}
           ${reportMetric("Recuperado", formatCurrency(kpis.retainedTotal), "cyan", "Valor efetivamente retido")}
+          ${reportMetric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "navy", "Integralizado dos inadimplentes")}
           ${reportMetric("Carteira", formatCurrency(kpis.totalPortfolio), "", "Valor total")}
           ${reportMetric("Inadimplência", formatCurrency(kpis.totalOverdue), "danger", "Valor atrasado")}
           ${reportMetric("% Inadimplência", formatPercent(kpis.defaultRate), "", "Sobre carteira")}
