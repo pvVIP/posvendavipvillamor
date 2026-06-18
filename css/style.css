@@ -3525,58 +3525,58 @@ textarea:focus {
     0 -7px 20px rgba(255, 248, 232, 0.22);
 }
 
-#executiveKpis .metric-card-success {
+.executive-group-kpis .metric-card-success {
   border-color: rgba(18, 189, 112, 0.36);
 }
 
-#executiveKpis .metric-card-danger {
+.executive-group-kpis .metric-card-danger {
   border-color: rgba(226, 62, 98, 0.38);
 }
 
-#executiveKpis .metric-card-warning {
+.executive-group-kpis .metric-card-warning {
   border-color: rgba(239, 173, 23, 0.38);
 }
 
-#executiveKpis .metric-card-closed {
+.executive-group-kpis .metric-card-closed {
   border-color: rgba(174, 179, 180, 0.42);
 }
 
-#executiveKpis .metric-card-success > span {
+.executive-group-kpis .metric-card-success > span {
   color: #078955;
   text-shadow: 0 0 12px rgba(18, 189, 112, 0.38);
 }
 
-#executiveKpis .metric-card-danger > span {
+.executive-group-kpis .metric-card-danger > span {
   color: #c6294e;
   text-shadow: 0 0 12px rgba(226, 62, 98, 0.38);
 }
 
-#executiveKpis .metric-card-warning > span {
+.executive-group-kpis .metric-card-warning > span {
   color: #a96c00;
   text-shadow: 0 0 12px rgba(239, 173, 23, 0.36);
 }
 
-#executiveKpis .metric-card-closed > span {
+.executive-group-kpis .metric-card-closed > span {
   color: #666c72;
   text-shadow: 0 0 12px rgba(174, 179, 180, 0.34);
 }
 
-[data-theme="dark"] #executiveKpis .metric-card-success > span {
+[data-theme="dark"] .executive-group-kpis .metric-card-success > span {
   color: #65efaa;
   text-shadow: 0 0 14px rgba(18, 189, 112, 0.66);
 }
 
-[data-theme="dark"] #executiveKpis .metric-card-danger > span {
+[data-theme="dark"] .executive-group-kpis .metric-card-danger > span {
   color: #ff829a;
   text-shadow: 0 0 14px rgba(226, 62, 98, 0.68);
 }
 
-[data-theme="dark"] #executiveKpis .metric-card-warning > span {
+[data-theme="dark"] .executive-group-kpis .metric-card-warning > span {
   color: #ffd266;
   text-shadow: 0 0 14px rgba(239, 173, 23, 0.62);
 }
 
-[data-theme="dark"] #executiveKpis .metric-card-closed > span {
+[data-theme="dark"] .executive-group-kpis .metric-card-closed > span {
   color: #fff8e8;
   text-shadow: 0 0 14px rgba(255, 248, 232, 0.42);
 }
@@ -4558,6 +4558,11 @@ textarea:focus {
   min-height: 122px;
 }
 
+.executive-primary-kpis .metric-card > span {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .executive-primary-kpis .metric-card strong {
   font-size: clamp(20px, 2vw, 28px);
 }
@@ -4587,6 +4592,94 @@ textarea:focus {
 
 .executive-disclosure > .metrics-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.executive-group-kpis .metric-card > span {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.executive-group-kpis .metric-card-brand::after {
+  height: 6px;
+  background: linear-gradient(90deg, #8f1f4a 0%, #db4d75 52%, #ff9b93 100%);
+  box-shadow: 0 -2px 9px rgba(219, 77, 117, 0.76), 0 -7px 20px rgba(219, 77, 117, 0.28);
+}
+
+.executive-group-kpis .metric-card-brand > span {
+  color: #b32657;
+  text-shadow: 0 0 12px rgba(219, 77, 117, 0.38);
+}
+
+.executive-group-kpis .metric-card-navy::after {
+  height: 6px;
+  background: linear-gradient(90deg, #0b2238 0%, #1b4d77 52%, #80b8e4 100%);
+  box-shadow: 0 -2px 9px rgba(36, 91, 136, 0.82), 0 -7px 20px rgba(36, 91, 136, 0.32);
+}
+
+.executive-group-kpis .metric-card-cyan::after {
+  height: 6px;
+  background: linear-gradient(90deg, #078b83 0%, #27c9ae 54%, #bfffe5 100%);
+  box-shadow: 0 -2px 9px rgba(39, 201, 174, 0.82), 0 -7px 20px rgba(39, 201, 174, 0.32);
+}
+
+[data-theme="dark"] .executive-group-kpis .metric-card-brand > span {
+  color: #ff81a7;
+}
+
+#executivePortfolioKpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#executiveRiskKpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+#executiveRecoveryKpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+#executiveComplementaryKpis {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.metric-card-toggle {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.metric-card-toggle:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--brand) 46%, var(--line));
+  box-shadow: var(--shadow);
+}
+
+.metric-card-toggle:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 38%, transparent);
+  outline-offset: 3px;
+}
+
+.metric-card-toggle > i {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: currentColor;
+  font-size: 13px;
+  font-style: normal;
+  opacity: 0.58;
+}
+
+.metric-card-toggle[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--brand) 54%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 18%, transparent), var(--shadow-soft);
 }
 
 .presentation-exit {
@@ -4654,6 +4747,13 @@ body.presentation-mode .dashboard-report-area > .section-header {
 
   .executive-primary-kpis,
   .executive-disclosure > .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #executivePortfolioKpis,
+  #executiveRiskKpis,
+  #executiveRecoveryKpis,
+  #executiveComplementaryKpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -4896,6 +4996,14 @@ body.presentation-mode .dashboard-report-area > .section-header {
   .executive-primary-kpis,
   .executive-disclosure > .metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #executivePortfolioKpis {
+    grid-template-columns: 1fr;
+  }
+
+  .executive-group-kpis .metric-card strong {
+    font-size: 16px;
   }
 
   #operationalKpis .metric-card,

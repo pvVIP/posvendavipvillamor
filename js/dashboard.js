@@ -17,7 +17,14 @@ export function calculateKpis(contracts, terminatedContracts = []) {
   const late = active.filter((item) => item.appStatus === STATUS.LATE);
   const current = active.filter((item) => item.appStatus === STATUS.CURRENT || item.appStatus === STATUS.PAID);
   const totalPortfolio = sum(active, "totalUpdatedValue");
+  const totalIntegralized = sum(active, "effectivePaidValue");
+  const totalReceivable = active.reduce((total, item) => {
+    const sourceBalance = toNumber(item.remainingBalance);
+    const derivedBalance = Math.max(0, toNumber(item.totalUpdatedValue) - toNumber(item.effectivePaidValue));
+    return total + (sourceBalance > 0 ? sourceBalance : derivedBalance);
+  }, 0);
   const totalOverdue = sum(active, "overdueValue");
+  const totalDefaultedOverdue = sum(defaulted, "overdueValue");
   const recoverableValue = sum(defaulted, "effectivePaidValue");
   const refundTotal = sum(terminatedContracts.filter((item) => item.hasRefund), "refundValue");
   const retainedTotal = sum(terminatedContracts.filter((item) => item.hasRetention), "retainedValue");
@@ -33,8 +40,14 @@ export function calculateKpis(contracts, terminatedContracts = []) {
     totalLate: late.length,
     totalTerminated: terminatedContracts.length,
     totalPortfolio,
+    totalIntegralized,
+    totalReceivable,
     totalOverdue,
+    totalDefaultedOverdue,
     defaultRate: totalPortfolio ? totalOverdue / totalPortfolio : 0,
+    overdueRateReceivable: totalReceivable ? totalOverdue / totalReceivable : 0,
+    defaultedRatePortfolio: totalPortfolio ? totalDefaultedOverdue / totalPortfolio : 0,
+    defaultedRateReceivable: totalReceivable ? totalDefaultedOverdue / totalReceivable : 0,
     averageTicket: active.length ? totalPortfolio / active.length : 0,
     recoverableValue,
     refundTotal,
@@ -88,7 +101,7 @@ export function getEvolutionData(contracts) {
 
 export function getTopDefaulted(contracts, limit = 20) {
   return [...contracts]
-    .filter((item) => toNumber(item.overdueValue) > 0)
+    .filter((item) => item.appStatus === STATUS.DEFAULTED && toNumber(item.overdueValue) > 0)
     .sort((a, b) => toNumber(b.overdueValue) - toNumber(a.overdueValue))
     .slice(0, limit);
 }

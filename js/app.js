@@ -21,7 +21,7 @@ import {
   groupByCategory,
   getHeatmapData,
   getTopDefaulted,
-} from "./dashboard.js?v=20260615-1";
+} from "./dashboard.js?v=20260617-1";
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
@@ -55,6 +55,8 @@ const state = {
   navigationCollapsed: readNavigationPreference(),
   operationalKpisExpanded: false,
   presentationMode: false,
+  riskPercentageBasis: "receivable",
+  recoverableScenario: "full",
 };
 
 const distratos = new DistratoService(db);
@@ -367,6 +369,7 @@ function bindEvents() {
   document.getElementById("executiveReportButton").addEventListener("click", printExecutivePortfolioReport);
   document.getElementById("presentationModeButton").addEventListener("click", togglePresentationMode);
   document.getElementById("presentationExitButton").addEventListener("click", togglePresentationMode);
+  document.getElementById("executivePanel").addEventListener("click", handleExecutiveMetricAction);
   document.getElementById("newTerminationButton").addEventListener("click", openTerminationFromHub);
   document.getElementById("formalTerminationReportButton").addEventListener("click", () => printTerminationReport("formal"));
   document.getElementById("executiveTerminationReportButton").addEventListener("click", () => printTerminationReport("executive"));
@@ -861,24 +864,78 @@ function renderExecutive() {
   const active = getActiveContracts(state.filtered);
   const defaultTerminations = getProductionTerminations();
   const kpis = calculateKpis(active, defaultTerminations);
+  const percentageBasisIsReceivable = state.riskPercentageBasis === "receivable";
+  const overdueRate = percentageBasisIsReceivable ? kpis.overdueRateReceivable : kpis.defaultRate;
+  const defaultedRate = percentageBasisIsReceivable ? kpis.defaultedRateReceivable : kpis.defaultedRatePortfolio;
+  const percentageBasisLabel = percentageBasisIsReceivable ? "saldo a receber" : "carteira total";
+  const alternatePercentageBasisLabel = percentageBasisIsReceivable ? "carteira total" : "saldo a receber";
+  const conservativeRecovery = state.recoverableScenario === "conservative";
+  const displayedRecoverable = conservativeRecovery ? kpis.recoverableValue * 0.5 : kpis.recoverableValue;
+  const categoryRisk = groupByCategory(active, "overdueValue").sort((a, b) => b.value - a.value)[0];
+  const categoryConcentration = categoryRisk && kpis.totalOverdue ? categoryRisk.value / kpis.totalOverdue : 0;
+  const topDefaulted = getTopDefaulted(active, 1)[0];
+  const healthAlerts = buildDataHealthAlerts();
+  const criticalHealthAlerts = healthAlerts.filter((alert) => alert.level === "critical").length;
   document.getElementById("dashboardDate").textContent = `Atualizado em ${formatDate(new Date().toISOString())}`;
   document.getElementById("executivePrimaryKpis").innerHTML = [
     metric("Contratos Ativos", kpis.totalActive, "Carteira filtrada", "brand"),
     metric("Adimplentes", kpis.totalCurrent, "Inclui quitados", "success"),
     metric("Em Atraso", kpis.totalLate, "Até 89 dias", "warning"),
     metric("Inadimplentes", kpis.totalDefaulted, "90+ dias", "danger"),
-    metric("Distratos Inadimplência", kpis.totalTerminated, `Usuário: ${state.currentUser}`, "closed", "terminatedMetricCard"),
-    metric("Recuperado", formatCurrency(kpis.retainedTotal), "Valor efetivamente retido", "cyan"),
-    metric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes", "navy"),
-    metric("Carteira", formatCurrency(kpis.totalPortfolio), "Valor total", "brand"),
   ].join("");
-  document.getElementById("executiveKpis").innerHTML = [
-    metric("Inadimplência", formatCurrency(kpis.totalOverdue), "Valor em atraso", "danger"),
-    metric("% Inadimplência", formatPercent(kpis.defaultRate), "Sobre a carteira", "danger"),
-    metric("Ticket Médio", formatCurrency(kpis.averageTicket), "Ativos"),
-    metric("% Distratos", formatPercent(kpis.terminationRate), "Distratos por inadimplência"),
-    metric("Aging Médio", `${Math.round(kpis.averageAging)} dias`, `${kpis.aging90Plus} contratos 90+ dias`),
-    metric("Faixa Crítica", `${kpis.aging180Plus} contratos`, "Mais de 180 dias", "warning"),
+  document.getElementById("executivePortfolioKpis").innerHTML = [
+    metric("Carteira Total", formatCurrency(kpis.totalPortfolio), "Valor total atualizado", "brand"),
+    metric("Carteira Integralizada", formatCurrency(kpis.totalIntegralized), "Valor já pago pelos clientes", "success"),
+    metric("Saldo a Receber", formatCurrency(kpis.totalReceivable), "Valor ainda previsto para recebimento", "navy"),
+  ].join("");
+  document.getElementById("executiveRiskKpis").innerHTML = [
+    metric("Valor em Atraso", formatCurrency(kpis.totalOverdue), "Todos os contratos com atraso", "warning"),
+    metric("Valor Inadimplente 90+", formatCurrency(kpis.totalDefaultedOverdue), "Somente contratos com 90+ dias", "danger"),
+    metricToggle(
+      "% Em Atraso",
+      formatPercent(overdueRate),
+      `Sobre ${percentageBasisLabel} · clique para ${alternatePercentageBasisLabel}`,
+      "warning",
+      "risk-percentage-basis",
+      !percentageBasisIsReceivable,
+    ),
+    metricToggle(
+      "% Inadimplência 90+",
+      formatPercent(defaultedRate),
+      `Sobre ${percentageBasisLabel} · clique para ${alternatePercentageBasisLabel}`,
+      "danger",
+      "risk-percentage-basis",
+      !percentageBasisIsReceivable,
+    ),
+    metric("Aging Médio", `${Math.round(kpis.averageAging)} dias`, `${kpis.aging90Plus} contratos 90+ dias`, "brand"),
+    metric("Aging 180+", `${kpis.aging180Plus} contratos`, "Faixa de maior criticidade", "danger"),
+  ].join("");
+  document.getElementById("executiveRecoveryKpis").innerHTML = [
+    metric("Distratos por Inadimplência", kpis.totalTerminated, `Usuário: ${state.currentUser}`, "closed", "terminatedMetricCard"),
+    metric("Recuperado", formatCurrency(kpis.retainedTotal), "Valor efetivamente retido", "cyan"),
+    metricToggle(
+      conservativeRecovery ? "Cenário Conservador 50%" : "Potencial Recuperável",
+      formatCurrency(displayedRecoverable),
+      conservativeRecovery ? "Metade do potencial · clique para valor total" : "Integralizado dos inadimplentes · clique para cenário 50%",
+      "navy",
+      "recoverable-scenario",
+      conservativeRecovery,
+    ),
+    metric("% Distratos", formatPercent(kpis.terminationRate), "Distratos por inadimplência", "closed"),
+  ].join("");
+  document.getElementById("executiveComplementaryKpis").innerHTML = [
+    metric("Ticket Médio", formatCurrency(kpis.averageTicket), "Contratos ativos", "brand"),
+    metric("Faixa Crítica", `${kpis.aging180Plus} contratos`, "Mais de 180 dias", "danger"),
+    metric("Concentração por Categoria", formatPercent(categoryConcentration), categoryRisk?.label || "Sem exposição", "warning"),
+    metric("Top Inadimplentes", formatCurrency(topDefaulted?.overdueValue || 0), "Maior exposição individual 90+", "danger"),
+    metricToggle(
+      "Alertas de Dados",
+      healthAlerts.length,
+      criticalHealthAlerts ? `${criticalHealthAlerts} críticos · abrir detalhes` : "Abrir saúde dos dados",
+      criticalHealthAlerts ? "danger" : healthAlerts.length ? "warning" : "success",
+      "open-data-health",
+      false,
+    ),
   ].join("");
   bindTerminatedMetricHover();
   renderExecutiveBrief(active, kpis);
@@ -896,6 +953,43 @@ function metric(label, value, helper, tone = "", id = "", className = "") {
   const extraClass = className ? ` ${className}` : "";
   const idAttribute = id ? ` id="${id}" tabindex="0"` : "";
   return `<article class="metric-card${toneClass}${extraClass}"${idAttribute}><span>${label}</span><strong>${value}</strong><small>${helper}</small></article>`;
+}
+
+function metricToggle(label, value, helper, tone, action, pressed = false) {
+  const toneClass = tone ? ` metric-card-${tone}` : "";
+  return `
+    <button
+      class="metric-card metric-card-toggle${toneClass}"
+      type="button"
+      data-metric-action="${action}"
+      aria-pressed="${pressed}"
+      aria-label="${escapeAttr(`${label}. ${value}. ${helper}`)}"
+    >
+      <span>${label}</span>
+      <strong>${value}</strong>
+      <small>${helper}</small>
+      <i aria-hidden="true">↔</i>
+    </button>
+  `;
+}
+
+function handleExecutiveMetricAction(event) {
+  const trigger = event.target.closest("[data-metric-action]");
+  if (!trigger) return;
+  const action = trigger.dataset.metricAction;
+  if (action === "risk-percentage-basis") {
+    state.riskPercentageBasis = state.riskPercentageBasis === "receivable" ? "portfolio" : "receivable";
+    renderExecutive();
+    return;
+  }
+  if (action === "recoverable-scenario") {
+    state.recoverableScenario = state.recoverableScenario === "full" ? "conservative" : "full";
+    renderExecutive();
+    return;
+  }
+  if (action === "open-data-health") {
+    switchTab("health");
+  }
 }
 
 function toggleOperationalKpis() {
@@ -916,9 +1010,9 @@ function openPriorityQueue() {
 
 function renderExecutiveBrief(contracts, kpis) {
   const categoryRisk = groupByCategory(contracts, "overdueValue").sort((a, b) => b.value - a.value)[0];
-  const riskLevel = kpis.aging180Plus >= 40 || kpis.defaultRate >= 0.05
+  const riskLevel = kpis.aging180Plus >= 40 || kpis.defaultedRateReceivable >= 0.05
     ? "Crítico"
-    : kpis.aging90Plus >= 20 || kpis.defaultRate >= 0.025
+    : kpis.aging90Plus >= 20 || kpis.defaultedRateReceivable >= 0.025
       ? "Atenção"
       : "Controlado";
   const riskMessage = riskLevel === "Crítico"
@@ -2880,7 +2974,9 @@ function togglePresentationMode(force) {
   document.getElementById("presentationModeButton").textContent = next ? "Encerrar apresentação" : "Modo apresentação";
   document.getElementById("presentationExitButton").hidden = !next;
   if (next) {
-    document.getElementById("executiveDetails").open = false;
+    document.getElementById("executivePortfolioDetails").open = false;
+    document.getElementById("executiveRiskDetails").open = true;
+    document.getElementById("executiveRecoveryDetails").open = false;
     document.getElementById("executiveAnalytics").open = true;
     window.scrollTo({ top: 0, behavior: "smooth" });
   }

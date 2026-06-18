@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260615-2">
+  <link rel="stylesheet" href="css/style.css?v=20260617-1">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260616-1" type="module"></script>
+  <script src="js/app.js?v=20260617-1" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -406,16 +406,27 @@
             <span id="dashboardDate"></span>
           </div>
 
-          <div class="executive-brief" id="executiveBrief"></div>
           <div class="metrics-grid executive-primary-kpis" id="executivePrimaryKpis" aria-live="polite"></div>
+          <div class="executive-brief" id="executiveBrief"></div>
 
-          <details class="executive-disclosure" id="executiveDetails">
-            <summary>Indicadores complementares</summary>
-            <div class="metrics-grid" id="executiveKpis" aria-live="polite"></div>
+          <details class="executive-disclosure" id="executivePortfolioDetails">
+            <summary>Composição da Carteira</summary>
+            <div class="metrics-grid executive-group-kpis" id="executivePortfolioKpis" aria-live="polite"></div>
+          </details>
+
+          <details class="executive-disclosure" id="executiveRiskDetails" open>
+            <summary>Risco de Recebimento</summary>
+            <div class="metrics-grid executive-group-kpis executive-risk-kpis" id="executiveRiskKpis" aria-live="polite"></div>
+          </details>
+
+          <details class="executive-disclosure" id="executiveRecoveryDetails">
+            <summary>Distratos e Recuperação</summary>
+            <div class="metrics-grid executive-group-kpis" id="executiveRecoveryKpis" aria-live="polite"></div>
           </details>
 
           <details class="executive-disclosure executive-analytics" id="executiveAnalytics" open>
-            <summary>Análises e concentrações</summary>
+            <summary>Complementares</summary>
+            <div class="metrics-grid executive-group-kpis executive-complementary-kpis" id="executiveComplementaryKpis" aria-live="polite"></div>
             <div class="dashboard-grid">
               <article class="chart-panel wide">
                 <div class="panel-header">

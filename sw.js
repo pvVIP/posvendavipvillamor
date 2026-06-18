@@ -1,11 +1,11 @@
-const CACHE_NAME = "pos-venda-vip-v23";
+const CACHE_NAME = "pos-venda-vip-v24";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./offline.html",
   "./manifest.webmanifest",
-  "./css/style.css?v=20260615-2",
-  "./js/app.js?v=20260616-1",
+  "./css/style.css?v=20260617-1",
+  "./js/app.js?v=20260617-1",
   "./js/config.js",
   "./js/data-provider.js?v=20260616-1",
   "./js/database.js?v=20260616-1",
@@ -16,7 +16,7 @@ const APP_SHELL = [
   "./js/distratos.js?v=20260615-1",
   "./js/upload.js?v=20260616-1",
   "./js/charts.js",
-  "./js/dashboard.js?v=20260615-1",
+  "./js/dashboard.js?v=20260617-1",
   "./js/insights.js?v=20260609-7",
   "./js/utils.js",
   "./vendor/chart.umd.min.js?v=4.4.7",
