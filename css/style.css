@@ -670,6 +670,7 @@ textarea:focus {
 }
 
 .health-alert {
+  width: 100%;
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
   gap: 12px;
@@ -678,6 +679,25 @@ textarea:focus {
   border-radius: var(--radius);
   padding: 14px;
   background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+button.health-alert {
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+button.health-alert:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--brand) 42%, var(--line));
+  box-shadow: var(--shadow-soft);
+}
+
+button.health-alert:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--focus) 38%, transparent);
+  outline-offset: 2px;
 }
 
 .health-alert-critical { border-left-color: var(--red); }
@@ -720,6 +740,298 @@ textarea:focus {
 
 .health-alert small {
   color: var(--ink);
+}
+
+.health-alert-open {
+  display: inline-flex;
+  margin-top: 10px;
+  color: var(--brand-dark);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.health-alert-dialog {
+  width: min(900px, calc(100vw - 32px));
+}
+
+.health-alert-dialog form {
+  padding: 0;
+}
+
+.health-detail-header,
+.health-detail-summary,
+.health-detail-search,
+.health-detail-count,
+.health-record-list {
+  margin-inline: 22px;
+}
+
+.health-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 22px;
+}
+
+.health-detail-header h2 {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.health-detail-close {
+  flex: 0 0 auto;
+  font-size: 23px;
+  line-height: 1;
+}
+
+.health-detail-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(260px, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.health-detail-summary > p,
+.health-detail-action {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 13px;
+  background: var(--surface-soft);
+  line-height: 1.45;
+}
+
+.health-detail-action {
+  border-left: 4px solid var(--brand);
+}
+
+.health-detail-action strong,
+.health-detail-action span {
+  display: block;
+}
+
+.health-detail-action strong {
+  margin-bottom: 5px;
+  color: var(--brand-dark);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.health-detail-search {
+  display: block;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.health-detail-search input {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.health-detail-count {
+  margin-top: 13px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.health-record-list {
+  display: grid;
+  gap: 10px;
+  max-height: min(52vh, 520px);
+  overflow-y: auto;
+  margin-top: 10px;
+  padding: 2px 3px 4px 0;
+}
+
+.health-record-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: var(--surface);
+}
+
+.health-record-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.health-record-heading strong,
+.health-record-heading span {
+  display: block;
+}
+
+.health-record-heading strong {
+  color: var(--ink);
+}
+
+.health-record-heading span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.health-record-area {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.health-record-problem {
+  margin: 11px 0;
+  border-left: 4px solid var(--red);
+  padding: 9px 11px;
+  background: color-mix(in srgb, var(--red) 10%, var(--surface));
+  color: var(--ink);
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.health-record-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.health-record-field {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) - 2px);
+  padding: 9px;
+  background: var(--surface-soft);
+}
+
+.health-record-field span,
+.health-record-field strong {
+  display: block;
+}
+
+.health-record-field span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.health-record-field strong {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.health-record-field.is-problem {
+  border-color: color-mix(in srgb, var(--red) 54%, var(--line));
+  background: color-mix(in srgb, var(--red) 12%, var(--surface));
+}
+
+.health-record-field.is-problem strong {
+  color: var(--red);
+}
+
+.health-record-recommendation {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.health-record-empty {
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.health-alert-dialog[data-level="critical"] .health-detail-action {
+  border-left-color: var(--red);
+}
+
+.health-alert-dialog[data-level="warning"] .health-detail-action {
+  border-left-color: var(--amber);
+}
+
+.health-alert-dialog[data-level="info"] .health-detail-action {
+  border-left-color: #3981a8;
+}
+
+[data-theme="dark"] .health-record-card {
+  background: var(--surface);
+}
+
+[data-theme="dark"] .health-record-problem {
+  background: rgba(214, 67, 91, 0.16);
+}
+
+[data-theme="dark"] .health-record-field.is-problem {
+  background: rgba(214, 67, 91, 0.14);
+}
+
+@media (max-width: 720px) {
+  .health-detail-header,
+  .health-detail-summary,
+  .health-detail-search,
+  .health-detail-count,
+  .health-record-list {
+    margin-inline: 16px;
+  }
+
+  .health-detail-header {
+    padding-top: 16px;
+  }
+
+  .health-detail-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .health-record-list {
+    max-height: 50vh;
+  }
+
+  .health-record-heading {
+    display: grid;
+  }
+
+  .health-record-area {
+    width: fit-content;
+  }
+
+  .health-record-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 430px) {
+  .health-alert {
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding: 12px 10px;
+  }
+
+  .health-alert-marker {
+    width: 30px;
+    height: 30px;
+  }
+
+  .health-alert-title {
+    align-items: flex-start;
+  }
+
+  .health-record-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .status-badge.health-ok {

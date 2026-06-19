@@ -242,6 +242,11 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   const contractCodeHeader = resolvedHeaders.get("contractCode");
   const statusHeader = resolvedHeaders.get("sourceStatus");
   const clientHeader = resolvedHeaders.get("primaryClient");
+  const financialStatusHeader = resolvedHeaders.get("financialStatus");
+  const effectivePaidHeader = resolvedHeaders.get("effectivePaidValue");
+  const effectivePaidPercentHeader = resolvedHeaders.get("effectivePaidPercent");
+  const paidPercentHeader = resolvedHeaders.get("paidPercent");
+  const remainingHeader = resolvedHeaders.get("remainingBalance");
   const totalHeader = resolvedHeaders.get("totalUpdatedValue");
   const overdueHeader = resolvedHeaders.get("overdueValue");
   const terminationDateHeader = resolvedHeaders.get("sourceTerminationDate");
@@ -252,6 +257,9 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   let missingClientCount = 0;
   let missingContractCodeCount = 0;
   let activeWithTerminationEvidenceCount = 0;
+  let paidIntegrityIssueCount = 0;
+  let integratedAboveTotalCount = 0;
+  let invalidPaidPercentCount = 0;
   const contractCodeCounts = new Map();
   const unknownStatuses = new Map();
 
@@ -276,6 +284,29 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
     if (totalHeader && toNumber(row[totalHeader]) < 0) negativeTotalCount += 1;
     if (overdueHeader && toNumber(row[overdueHeader]) < 0) negativeOverdueCount += 1;
     if (clientHeader && !row[clientHeader]) missingClientCount += 1;
+    const total = totalHeader ? Math.max(0, toNumber(row[totalHeader])) : 0;
+    const integrated = effectivePaidHeader ? Math.max(0, toNumber(row[effectivePaidHeader])) : 0;
+    const remaining = remainingHeader ? Math.max(0, toNumber(row[remainingHeader])) : 0;
+    const overdue = overdueHeader ? Math.max(0, toNumber(row[overdueHeader])) : 0;
+    const effectivePercent = effectivePaidPercentHeader
+      ? normalizeImportPercent(row[effectivePaidPercentHeader])
+      : null;
+    const legacyPercent = paidPercentHeader ? normalizeImportPercent(row[paidPercentHeader]) : null;
+    const paidPercent = effectivePercent ?? legacyPercent ?? (total > 0 ? (integrated / total) * 100 : null);
+    const tolerance = Math.max(1, total * 0.0005);
+    const isPaid = financialStatusHeader && normalizeHeader(row[financialStatusHeader]) === "quitado";
+    if (isPaid && (
+      (paidPercent !== null && paidPercent < 99.95)
+      || (total > 0 && integrated + tolerance < total)
+      || remaining > tolerance
+      || overdue > tolerance
+    )) {
+      paidIntegrityIssueCount += 1;
+    }
+    if (total > 0 && integrated > total + tolerance) integratedAboveTotalCount += 1;
+    if ([effectivePercent, legacyPercent].some((value) => value !== null && (value < 0 || value > 100.05))) {
+      invalidPaidPercentCount += 1;
+    }
     const status = normalizeHeader(row[statusHeader]);
     const reverted = ["revertid", "reativad", "restaurad"].some((term) => status.includes(term));
     const terminated = !reverted && ["distrat", "cancelad", "rescind", "rescis"].some((term) => status.includes(term));
@@ -326,6 +357,15 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
     warnings.push(`${activeWithTerminationEvidenceCount} registros estão com status Ativo e dados de cancelamento/distrato preenchidos. O status Ativo prevalecerá e esses contratos não entrarão na aba Distratos.`);
   }
 
+  if (paidIntegrityIssueCount) {
+    warnings.push(`${paidIntegrityIssueCount} contratos marcados como Quitado não comprovam integralização de 100%, saldo zero e atraso zero. Eles serão detalhados em Alertas de Dados.`);
+  }
+  if (integratedAboveTotalCount) {
+    warnings.push(`${integratedAboveTotalCount} registros possuem valor integralizado maior que o valor total atualizado.`);
+  }
+  if (invalidPaidPercentCount) {
+    warnings.push(`${invalidPaidPercentCount} registros possuem percentual integralizado fora da faixa de 0% a 100%.`);
+  }
   return {
     ok: errors.length === 0,
     errors,
@@ -341,7 +381,20 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
         .reduce((total, count) => total + count, 0),
     },
     activeWithTerminationEvidence: activeWithTerminationEvidenceCount,
+    financialHealth: {
+      paidIntegrityIssues: paidIntegrityIssueCount,
+      integratedAboveTotal: integratedAboveTotalCount,
+      invalidPaidPercent: invalidPaidPercentCount,
+    },
   };
+}
+
+function normalizeImportPercent(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = toNumber(value);
+  if (!Number.isFinite(number)) return null;
+  if (number > 0 && number <= 1) return number * 100;
+  return number;
 }
 
 function analyzeColumns(headers, resolvedHeaders) {

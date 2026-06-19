@@ -1,6 +1,6 @@
 import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260616-1";
 import { DistratoService } from "./distratos.js?v=20260615-1";
-import { parseWorkbookFile } from "./upload.js?v=20260616-1";
+import { parseWorkbookFile } from "./upload.js?v=20260619-1";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
 import {
@@ -57,6 +57,9 @@ const state = {
   presentationMode: false,
   riskPercentageBasis: "receivable",
   recoverableScenario: "full",
+  healthAlerts: [],
+  activeHealthAlert: null,
+  healthAlertQuery: "",
 };
 
 const distratos = new DistratoService(db);
@@ -384,6 +387,18 @@ function bindEvents() {
   document.getElementById("profileForm").addEventListener("submit", saveProfile);
   document.getElementById("cancelProfileButton").addEventListener("click", closeProfileDialog);
   document.getElementById("profileAvatarInput").addEventListener("change", handleProfileAvatar);
+  document.getElementById("healthAlerts").addEventListener("click", handleHealthAlertClick);
+  document.getElementById("healthAlertSearch").addEventListener("input", (event) => {
+    state.healthAlertQuery = event.target.value;
+    renderHealthAlertRecords();
+  });
+  ["closeHealthAlertDialog", "closeHealthAlertDialogFooter"].forEach((id) => {
+    document.getElementById(id).addEventListener("click", closeHealthAlertDetails);
+  });
+  document.getElementById("healthAlertDialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeHealthAlertDetails();
+  });
   document.getElementById("closeAnnotationMenuButton").addEventListener("click", closeAnnotationMenu);
   document.getElementById("cancelAnnotationButton").addEventListener("click", syncAnnotationMenu);
   document.getElementById("saveAnnotationButton").addEventListener("click", saveAnnotation);
@@ -1940,6 +1955,7 @@ function renderReversions() {
 
 function renderDataHealth() {
   const alerts = buildDataHealthAlerts();
+  state.healthAlerts = alerts;
   const critical = alerts.filter((alert) => alert.level === "critical");
   const warnings = alerts.filter((alert) => alert.level === "warning");
   const informative = alerts.filter((alert) => alert.level === "info");
@@ -1967,7 +1983,7 @@ function renderDataHealth() {
     metric("Exceções", state.sourceExceptions.length, "Status não classificado", state.sourceExceptions.length ? "danger" : "success"),
   ].join("");
   document.getElementById("healthAlerts").innerHTML = alerts.map((alert) => `
-    <article class="health-alert health-alert-${alert.level}">
+    <button type="button" class="health-alert health-alert-${alert.level}" data-health-alert-id="${escapeHtml(alert.id)}">
       <div class="health-alert-marker">${alert.level === "critical" ? "!" : alert.level === "warning" ? "△" : "i"}</div>
       <div>
         <div class="health-alert-title">
@@ -1976,8 +1992,9 @@ function renderDataHealth() {
         </div>
         <p>${escapeHtml(alert.detail)}</p>
         <small><strong>Ação:</strong> ${escapeHtml(alert.action)}</small>
+        <span class="health-alert-open">Visualizar registros</span>
       </div>
-    </article>
+    </button>
   `).join("") || `
     <article class="health-alert health-alert-success">
       <div class="health-alert-marker">✓</div>
@@ -1988,6 +2005,7 @@ function renderDataHealth() {
 
 function buildDataHealthAlerts() {
   const alerts = [];
+  const sourceContracts = [...state.contracts, ...state.historicalTerminated, ...state.reversions, ...state.sourceExceptions];
   const notExplicitlyActive = state.contracts.filter((contract) => normalizeReportText(contract.sourceStatus) !== "ativo");
   const missingClients = state.contracts.filter((contract) => !String(contract.primaryClient || "").trim());
   const overdueWithoutDate = state.contracts.filter((contract) => toNumber(contract.overdueValue) > 0 && !contract.nextDueDate);
@@ -2001,55 +2019,385 @@ function buildDataHealthAlerts() {
   const terminationsWithoutDate = state.historicalTerminated.filter((contract) => !contract.sourceTerminationDate);
   const terminationsWithoutReason = state.historicalTerminated.filter((contract) => !String(contract.sourceTerminationReason || "").trim());
   const activeTerminationConflicts = state.activeTerminationConflicts || [];
-  const sourceContracts = [...state.contracts, ...state.historicalTerminated, ...state.reversions, ...state.sourceExceptions];
   const codeCounts = new Map();
   sourceContracts.forEach((contract) => {
     if (!contract.hasContractCodeSource) return;
     const code = String(contract.contractCode || "").trim();
     if (code) codeCounts.set(code, (codeCounts.get(code) || 0) + 1);
   });
-  const duplicatedContractCodeRows = [...codeCounts.values()]
-    .filter((count) => count > 1)
-    .reduce((total, count) => total + count, 0);
+  const duplicatedCodes = new Set([...codeCounts.entries()].filter(([, count]) => count > 1).map(([code]) => code));
+  const duplicatedContractCodeRows = sourceContracts.filter((contract) => duplicatedCodes.has(String(contract.contractCode || "").trim()));
 
-  addHealthAlert(alerts, "critical", "Status incompatível na carteira ativa", notExplicitlyActive.length,
+  const paidContracts = sourceContracts.filter((contract) => (
+    normalizeReportText(contract.financialStatus) === "quitado"
+    || normalizeReportText(contract.appStatus) === "quitado"
+  ));
+  const paidIntegrityIssues = paidContracts
+    .map((contract) => buildPaidIntegrityRecord(contract))
+    .filter(Boolean);
+  const paidWithoutEvidence = paidContracts
+    .filter((contract) => {
+      const total = toNumber(contract.totalUpdatedValue);
+      const paid = toNumber(contract.effectivePaidValue);
+      const remaining = toNumber(contract.remainingBalance);
+      const percent = getContractPaidPercent(contract);
+      return total <= 0 && paid <= 0 && remaining <= 0 && percent === null;
+    })
+    .map((contract) => healthContractRecord(contract, {
+      problem: "O contrato está marcado como Quitado, mas não há valores ou percentual suficientes para comprovar integralização de 100%.",
+      expected: "Percentual integralizado de 100% ou composição financeira completa.",
+      fields: financialHealthFields(contract, ["financialStatus"]),
+    }));
+  const integratedAboveTotal = sourceContracts
+    .filter((contract) => {
+      const total = toNumber(contract.totalUpdatedValue);
+      return total > 0 && toNumber(contract.effectivePaidValue) > total + financialTolerance(total);
+    })
+    .map((contract) => healthContractRecord(contract, {
+      problem: "O valor integralizado supera o valor total atualizado do contrato.",
+      expected: "Integralizado menor ou igual à carteira do contrato.",
+      fields: financialHealthFields(contract, ["effectivePaidValue", "totalUpdatedValue"]),
+    }));
+  const invalidPaidPercent = sourceContracts
+    .filter((contract) => {
+      const effective = normalizePaidPercent(contract.effectivePaidPercent);
+      const legacy = normalizePaidPercent(contract.paidPercent);
+      return [effective, legacy].some((value) => value !== null && (value < 0 || value > 100.05));
+    })
+    .map((contract) => {
+      const problemFields = [];
+      const effective = normalizePaidPercent(contract.effectivePaidPercent);
+      const legacy = normalizePaidPercent(contract.paidPercent);
+      if (effective !== null && (effective < 0 || effective > 100.05)) problemFields.push("effectivePaidPercent");
+      if (legacy !== null && (legacy < 0 || legacy > 100.05)) problemFields.push("paidPercent");
+      return healthContractRecord(contract, {
+        problem: "O percentual integralizado está fora do intervalo válido de 0% a 100%.",
+        expected: "Percentual entre 0% e 100%.",
+        fields: financialHealthFields(contract, problemFields),
+      });
+    });
+  const activeWithoutTotal = state.contracts
+    .filter((contract) => toNumber(contract.totalUpdatedValue) <= 0)
+    .map((contract) => healthContractRecord(contract, {
+      problem: "Contrato ativo sem valor total atualizado positivo.",
+      expected: "Carteira total maior que zero.",
+      fields: financialHealthFields(contract, ["totalUpdatedValue"]),
+    }));
+  const overdueAboveRemaining = state.contracts
+    .filter((contract) => {
+      const overdue = toNumber(contract.overdueValue);
+      const remaining = toNumber(contract.remainingBalance);
+      return overdue > 0 && overdue > remaining + financialTolerance(Math.max(overdue, remaining));
+    })
+    .map((contract) => healthContractRecord(contract, {
+      problem: "O valor em atraso supera o saldo a receber informado.",
+      expected: "Atraso menor ou igual ao saldo a receber, salvo juros ou ajustes documentados.",
+      fields: financialHealthFields(contract, ["overdueValue", "remainingBalance"]),
+    }));
+
+  addHealthAlert(alerts, "critical", "Quitados sem integralização de 100%", paidIntegrityIssues,
+    "Contratos marcados como Quitado possuem percentual abaixo de 100%, saldo restante, atraso ou diferença entre total e integralizado.",
+    "Corrija os valores financeiros na fonte. Quitado deve ter 100% integralizado, saldo restante zero e atraso zero.");
+  addHealthAlert(alerts, "critical", "Integralizado maior que a carteira", integratedAboveTotal,
+    "O valor já pago está acima do valor total atualizado e pode superestimar carteira integralizada e recuperação.",
+    "Confira valor total, integralizado e eventuais reajustes ou estornos na fonte.");
+  addHealthAlert(alerts, "critical", "Percentual integralizado inválido", invalidPaidPercent,
+    "Há percentuais fora da faixa de 0% a 100%, indicando escala ou preenchimento incorreto.",
+    "Padronize o percentual como número entre 0 e 100 ou como percentual nativo da planilha.");
+  addHealthAlert(alerts, "critical", "Status incompatível na carteira ativa", notExplicitlyActive.map((contract) => healthContractRecord(contract, {
+    problem: `Registro presente na carteira ativa com status de origem "${contract.sourceStatus || "vazio"}".`,
+    expected: "Status de origem Ativo.",
+    fields: standardHealthFields(contract, ["sourceStatus"]),
+  })),
     "Existem contratos na área ativa sem status de origem igual a Ativo. Eles podem distorcer toda a carteira.",
     "Reaplique a base atual para concluir a segregação automática.");
-  addHealthAlert(alerts, "critical", "Status de origem não reconhecido", state.sourceExceptions.length,
+  addHealthAlert(alerts, "critical", "Status de origem não reconhecido", state.sourceExceptions.map((contract) => healthContractRecord(contract, {
+    problem: `O status "${contract.sourceStatus || "vazio"}" ainda não possui regra confiável de classificação.`,
+    expected: "Ativo, Cancelado/Distratado ou Revertido.",
+    fields: standardHealthFields(contract, ["sourceStatus"]),
+  })),
     "Esses registros foram preservados, mas ficaram fora dos indicadores porque não são Ativo, Cancelado ou Revertido.",
     "Confira os valores da coluna Status e informe novos padrões válidos para classificação.");
-  addHealthAlert(alerts, "critical", "Distratos conflitantes com carteira ativa", activeTerminationConflicts.length,
+  addHealthAlert(alerts, "critical", "Distratos conflitantes com carteira ativa", activeTerminationConflicts.map((contract) => healthContractRecord(contract, {
+    problem: "O mesmo localizador aparece como contrato ativo e como distrato.",
+    expected: "Uma única classificação vigente por localizador.",
+    fields: standardHealthFields(contract, ["sourceStatus"]),
+  })),
     `Existem registros no histórico de distratos que também constam como ativos. O sistema bloqueou a exibição desses distratos. Exemplos: ${conflictExamples(activeTerminationConflicts)}.`,
     "Reaplique a base atual para limpar a origem e confira a coluna Status na base de contratos.");
-  addHealthAlert(alerts, "critical", "Inadimplência sem próximo vencimento", overdueWithoutDate.length,
+  addHealthAlert(alerts, "critical", "Inadimplência sem próximo vencimento", overdueWithoutDate.map((contract) => healthContractRecord(contract, {
+    problem: "Há valor em atraso, mas a data de próximo vencimento está vazia.",
+    expected: "Data de próximo vencimento válida para calcular o aging.",
+    fields: financialHealthFields(contract, ["overdueValue", "nextDueDate"]),
+  })),
     "O aging não pode ser calculado com segurança quando há valor em atraso sem data de próximo vencimento.",
     "Corrija a data na base de origem antes da próxima atualização.");
-  addHealthAlert(alerts, "warning", "Reversões sem vínculo com contrato ativo", unlinkedReversions.length,
+  addHealthAlert(alerts, "warning", "Quitados sem evidência financeira", paidWithoutEvidence,
+    "O status indica quitação, mas a base não oferece valores suficientes para comprovar a integralização.",
+    "Preencha carteira total, integralizado, saldo restante e percentual integralizado.");
+  addHealthAlert(alerts, "warning", "Contratos ativos sem valor total", activeWithoutTotal,
+    "Contratos ativos com carteira zerada podem reduzir artificialmente ticket médio e percentuais financeiros.",
+    "Confira o valor total atualizado do contrato na origem.");
+  addHealthAlert(alerts, "warning", "Atraso maior que o saldo a receber", overdueAboveRemaining,
+    "O atraso supera o saldo restante. Isso pode ser legítimo apenas quando há juros, multas ou ajustes não refletidos no saldo.",
+    "Confirme juros e ajustes; caso não existam, corrija atraso ou saldo a receber.");
+  addHealthAlert(alerts, "warning", "Reversões sem vínculo com contrato ativo", unlinkedReversions.map((contract) => healthContractRecord(contract, {
+    problem: "A Origem Reversão não localizou um contrato ativo correspondente.",
+    expected: "Origem Reversão igual ao localizador do contrato atual.",
+    fields: standardHealthFields(contract, ["originReversal"]),
+  })),
     "A reversão foi armazenada como histórico, porém a Origem Reversão não permitiu localizar o contrato atual.",
     "Padronize a Origem Reversão com o identificador do contrato relacionado.");
-  addHealthAlert(alerts, "warning", "Reversões sem origem informada", reversionsWithoutOrigin.length,
+  addHealthAlert(alerts, "warning", "Reversões sem origem informada", reversionsWithoutOrigin.map((contract) => healthContractRecord(contract, {
+    problem: "A coluna Origem Reversão está vazia.",
+    expected: "Localizador do contrato que substituiu este registro.",
+    fields: standardHealthFields(contract, ["originReversal"]),
+  })),
     "Sem a origem, não é possível reconstruir a trajetória entre contrato antigo e contrato atual.",
     "Preencha a coluna Origem Reversão na fonte.");
-  addHealthAlert(alerts, "warning", "Clientes ativos sem nome", missingClients.length,
+  addHealthAlert(alerts, "warning", "Clientes ativos sem nome", missingClients.map((contract) => healthContractRecord(contract, {
+    problem: "O cessionário principal está vazio.",
+    expected: "Nome do cliente principal.",
+    fields: standardHealthFields(contract, ["primaryClient"]),
+  })),
     "A ausência do cliente prejudica busca, cobrança, conferência e relatórios.",
     "Complemente o cessionário principal na base de contratos.");
-  addHealthAlert(alerts, "warning", "Códigos de contrato duplicados", duplicatedContractCodeRows,
+  addHealthAlert(alerts, "warning", "Códigos de contrato duplicados", duplicatedContractCodeRows.map((contract) => healthContractRecord(contract, {
+    problem: `O código ${contract.contractCode || "-"} aparece em ${codeCounts.get(String(contract.contractCode || "").trim()) || 0} registros.`,
+    expected: "Código de contrato único; localizador permanece como chave técnica.",
+    fields: standardHealthFields(contract, ["contractCode", "localizer"]),
+  })),
     "O CÓDIGO é exibido como número do contrato, mas aparece em mais de um registro da base. Os localizadores únicos impedem que os dados sejam misturados.",
     "Revise os códigos repetidos na origem e use o localizador para confirmar qual registro está sendo tratado.");
-  addHealthAlert(alerts, "warning", "Ajustes financeiros negativos", negativeAdjustments.length,
+  addHealthAlert(alerts, "warning", "Ajustes financeiros negativos", negativeAdjustments.map((contract) => healthContractRecord(contract, {
+    problem: "A origem contém valor financeiro negativo que foi neutralizado nos indicadores.",
+    expected: "Valor positivo ou ajuste classificado separadamente.",
+    fields: financialHealthFields(contract, ["sourceFinancialAdjustments"]),
+  })),
     "Os valores originais foram preservados, mas neutralizados nos indicadores para não reduzir carteira ou inadimplência.",
     "Confirme se representam crédito, estorno ou ajuste e crie uma classificação financeira na origem.");
-  addHealthAlert(alerts, "info", "Distratos históricos sem data", terminationsWithoutDate.length,
+  addHealthAlert(alerts, "info", "Distratos históricos sem data", terminationsWithoutDate.map((contract) => healthContractRecord(contract, {
+    problem: "Data de cancelamento/distrato não informada.",
+    expected: "Data válida do evento.",
+    fields: standardHealthFields(contract, ["sourceTerminationDate"]),
+  })),
     "Esses registros não entram corretamente em análises mensais e coortes de distrato.",
     "Preencha a data de cancelamento quando disponível.");
-  addHealthAlert(alerts, "info", "Distratos históricos sem motivo", terminationsWithoutReason.length,
+  addHealthAlert(alerts, "info", "Distratos históricos sem motivo", terminationsWithoutReason.map((contract) => healthContractRecord(contract, {
+    problem: "Motivo do cancelamento/distrato não informado.",
+    expected: "Motivo padronizado e, quando necessário, observação complementar.",
+    fields: standardHealthFields(contract, ["sourceTerminationReason"]),
+  })),
     "A ausência do motivo limita análises de causa e prevenção.",
     "Padronize os motivos de cancelamento na fonte.");
   return alerts;
 }
 
-function addHealthAlert(alerts, level, title, count, detail, action) {
-  if (count > 0) alerts.push({ level, title, count, detail, action });
+function addHealthAlert(alerts, level, title, records, detail, action) {
+  if (!records.length) return;
+  alerts.push({
+    id: healthAlertId(title),
+    level,
+    title,
+    count: records.length,
+    detail,
+    action,
+    records,
+  });
+}
+
+function buildPaidIntegrityRecord(contract) {
+  const total = toNumber(contract.totalUpdatedValue);
+  const paid = toNumber(contract.effectivePaidValue);
+  const remaining = toNumber(contract.remainingBalance);
+  const overdue = toNumber(contract.overdueValue);
+  const percent = getContractPaidPercent(contract);
+  const tolerance = financialTolerance(total);
+  const issues = [];
+  const problemFields = [];
+  if (percent !== null && percent < 99.95) {
+    issues.push(`integralização de ${formatPercent(percent / 100)}`);
+    problemFields.push("effectivePaidPercent");
+  }
+  if (total > 0 && paid + tolerance < total) {
+    issues.push(`${formatCurrency(total - paid)} ainda não integralizados`);
+    problemFields.push("totalUpdatedValue", "effectivePaidValue");
+  }
+  if (remaining > tolerance) {
+    issues.push(`saldo restante de ${formatCurrency(remaining)}`);
+    problemFields.push("remainingBalance");
+  }
+  if (overdue > tolerance) {
+    issues.push(`atraso de ${formatCurrency(overdue)}`);
+    problemFields.push("overdueValue");
+  }
+  if (!issues.length) return null;
+  return healthContractRecord(contract, {
+    problem: `Quitado inconsistente: ${issues.join("; ")}.`,
+    expected: "100% integralizado, saldo a receber zero e atraso zero.",
+    fields: financialHealthFields(contract, problemFields),
+  });
+}
+
+function financialTolerance(reference) {
+  return Math.max(1, Math.abs(toNumber(reference)) * 0.0005);
+}
+
+function normalizePaidPercent(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = toNumber(value);
+  if (!Number.isFinite(number)) return null;
+  if (number > 0 && number <= 1) return number * 100;
+  return number;
+}
+
+function getContractPaidPercent(contract) {
+  const effective = normalizePaidPercent(contract.effectivePaidPercent);
+  if (effective !== null && effective > 0) return effective;
+  const legacy = normalizePaidPercent(contract.paidPercent);
+  if (legacy !== null && legacy > 0) return legacy;
+  const total = toNumber(contract.totalUpdatedValue);
+  if (total > 0) return (toNumber(contract.effectivePaidValue) / total) * 100;
+  return null;
+}
+
+function healthContractRecord(contract, { problem, expected, fields = [], recommendation = "" }) {
+  return {
+    contract,
+    problem,
+    expected,
+    recommendation,
+    area: healthContractArea(contract),
+    fields,
+  };
+}
+
+function healthContractArea(contract) {
+  if (state.contracts.includes(contract)) return "Carteira ativa";
+  if (state.historicalTerminated.includes(contract)) return "Distratos";
+  if (state.reversions.includes(contract)) return "Reversões";
+  if (state.sourceExceptions.includes(contract)) return "Exceções";
+  return "Conciliação";
+}
+
+function standardHealthFields(contract, problemFields = []) {
+  const fields = [
+    ["contractCode", "Contrato", contractDisplayCode(contract)],
+    ["localizer", "Localizador", contractLocalizer(contract)],
+    ["sourceStatus", "Status de origem", contract.sourceStatus || "-"],
+  ];
+  return fields.map(([key, label, value]) => ({
+    label,
+    value,
+    problem: problemFields.includes(key),
+  }));
+}
+
+function financialHealthFields(contract, problemFields = []) {
+  const percent = getContractPaidPercent(contract);
+  const legacyPercent = normalizePaidPercent(contract.paidPercent);
+  const adjustments = contract.sourceFinancialAdjustments || {};
+  const fields = [
+    ["financialStatus", "Status financeiro", contract.financialStatus || contract.appStatus || "-"],
+    ["effectivePaidPercent", "Integralização", percent === null ? "Não informada" : formatPercent(percent / 100)],
+    ["paidPercent", "Percentual da origem", legacyPercent === null ? "Não informado" : formatPercent(legacyPercent / 100)],
+    ["totalUpdatedValue", "Carteira total", formatCurrency(contract.totalUpdatedValue)],
+    ["effectivePaidValue", "Integralizado", formatCurrency(contract.effectivePaidValue)],
+    ["remainingBalance", "Saldo a receber", formatCurrency(contract.remainingBalance)],
+    ["overdueValue", "Valor em atraso", formatCurrency(contract.overdueValue)],
+    ["nextDueDate", "Próximo vencimento", formatDate(contract.nextDueDate)],
+    ["sourceFinancialAdjustments", "Ajuste original", [
+      adjustments.totalUpdatedValue < 0 ? `Total ${formatCurrency(adjustments.totalUpdatedValue)}` : "",
+      adjustments.overdueValue < 0 ? `Atraso ${formatCurrency(adjustments.overdueValue)}` : "",
+    ].filter(Boolean).join(" · ") || "-"],
+  ];
+  return fields.map(([key, label, value]) => ({
+    label,
+    value,
+    problem: problemFields.includes(key),
+  }));
+}
+
+function healthAlertId(title) {
+  return normalizeReportText(title).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function handleHealthAlertClick(event) {
+  const trigger = event.target.closest("[data-health-alert-id]");
+  if (!trigger) return;
+  openHealthAlertDetails(trigger.dataset.healthAlertId);
+}
+
+function openHealthAlertDetails(alertId) {
+  const alert = state.healthAlerts.find((item) => item.id === alertId);
+  if (!alert) return;
+  state.activeHealthAlert = alert;
+  state.healthAlertQuery = "";
+  document.getElementById("healthAlertSearch").value = "";
+  document.getElementById("healthAlertSeverity").textContent = {
+    critical: "Inconsistência crítica",
+    warning: "Ponto de atenção",
+    info: "Melhoria de cadastro",
+  }[alert.level] || "Alerta de dados";
+  document.getElementById("healthAlertDialogTitle").textContent = alert.title;
+  document.getElementById("healthAlertDetail").textContent = alert.detail;
+  document.getElementById("healthAlertAction").textContent = alert.action;
+  const dialog = document.getElementById("healthAlertDialog");
+  dialog.dataset.level = alert.level;
+  renderHealthAlertRecords();
+  if (!dialog.open) dialog.showModal();
+  requestAnimationFrame(() => document.getElementById("healthAlertSearch").focus());
+}
+
+function renderHealthAlertRecords() {
+  const alert = state.activeHealthAlert;
+  if (!alert) return;
+  const query = normalizeReportText(state.healthAlertQuery);
+  const records = alert.records.filter((record) => {
+    if (!query) return true;
+    const contract = record.contract || {};
+    return normalizeReportText([
+      contract.primaryClient,
+      contractDisplayCode(contract),
+      contractLocalizer(contract),
+      record.problem,
+      record.area,
+    ].join(" ")).includes(query);
+  });
+  document.getElementById("healthAlertRecordCount").textContent = query
+    ? `${records.length} de ${alert.count} registros encontrados`
+    : `${alert.count} ${alert.count === 1 ? "registro afetado" : "registros afetados"}`;
+  document.getElementById("healthAlertRecords").innerHTML = records.map((record) => {
+    const contract = record.contract || {};
+    return `
+      <article class="health-record-card">
+        <div class="health-record-heading">
+          <div>
+            <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
+            <span>Contrato ${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</span>
+          </div>
+          <span class="health-record-area">${escapeHtml(record.area)}</span>
+        </div>
+        <p class="health-record-problem">${escapeHtml(record.problem)}</p>
+        <div class="health-record-fields">
+          ${record.fields.map((field) => `
+            <div class="health-record-field ${field.problem ? "is-problem" : ""}">
+              <span>${escapeHtml(field.label)}</span>
+              <strong>${escapeHtml(field.value ?? "-")}</strong>
+            </div>
+          `).join("")}
+        </div>
+        <p class="health-record-recommendation"><strong>Esperado:</strong> ${escapeHtml(record.expected)}${record.recommendation ? ` · ${escapeHtml(record.recommendation)}` : ""}</p>
+      </article>
+    `;
+  }).join("") || `<div class="health-record-empty">Nenhum registro corresponde à busca.</div>`;
+}
+
+function closeHealthAlertDetails() {
+  const dialog = document.getElementById("healthAlertDialog");
+  if (dialog.open) dialog.close();
+  state.activeHealthAlert = null;
+  state.healthAlertQuery = "";
 }
 
 function conflictExamples(contracts) {

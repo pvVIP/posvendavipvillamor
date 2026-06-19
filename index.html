@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260617-1">
+  <link rel="stylesheet" href="css/style.css?v=20260619-1">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260617-1" type="module"></script>
+  <script src="js/app.js?v=20260619-1" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -623,6 +623,34 @@
       <div class="modal-actions">
         <button type="button" class="secondary-button" id="cancelProfileButton">Cancelar</button>
         <button type="submit" class="primary-button">Salvar perfil</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="healthAlertDialog" class="modal health-alert-dialog" aria-labelledby="healthAlertDialogTitle">
+    <form method="dialog">
+      <div class="health-detail-header">
+        <div>
+          <p class="eyebrow" id="healthAlertSeverity">Alerta de dados</p>
+          <h2 id="healthAlertDialogTitle">Registros afetados</h2>
+        </div>
+        <button type="button" class="icon-button health-detail-close" id="closeHealthAlertDialog" aria-label="Fechar detalhes">&times;</button>
+      </div>
+      <div class="health-detail-summary">
+        <p id="healthAlertDetail"></p>
+        <div class="health-detail-action">
+          <strong>Providência recomendada</strong>
+          <span id="healthAlertAction"></span>
+        </div>
+      </div>
+      <label class="health-detail-search" for="healthAlertSearch">
+        Localizar registro
+        <input type="search" id="healthAlertSearch" placeholder="Cliente, contrato ou localizador" autocomplete="off">
+      </label>
+      <div class="health-detail-count" id="healthAlertRecordCount"></div>
+      <div class="health-record-list" id="healthAlertRecords"></div>
+      <div class="modal-actions">
+        <button type="button" class="primary-button" id="closeHealthAlertDialogFooter">Fechar</button>
       </div>
     </form>
   </dialog>
