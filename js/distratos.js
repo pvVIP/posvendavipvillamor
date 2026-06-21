@@ -66,6 +66,11 @@ export class DistratoService {
   }
 
   async editTermination(contract, reason, user, financial = {}) {
+    if (contract.sourceOnlyTermination && typeof this.database.adoptSourceTermination === "function") {
+      await this.database.adoptSourceTermination(contract, reason, user, financial);
+      return;
+    }
+
     if (typeof this.database.editTermination === "function") {
       await this.database.editTermination(contract.contractId, reason, financial);
       return;

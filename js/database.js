@@ -202,6 +202,65 @@ export class Database {
     await this.storage.delete("terminatedContracts", contractId);
   }
 
+  async adoptSourceTermination(contract, reason, user, financial = {}) {
+    const sourceTerminations = await this.getSourceTerminations();
+    const sourceContract = sourceTerminations.find((item) => item.contractId === contract.contractId);
+    if (!sourceContract) throw new Error("Distrato herdado não encontrado.");
+
+    const now = todayIso();
+    const isDefaultTermination = reason === "Inadimplência";
+    const terminatedAt = financial.terminationDate
+      ? `${financial.terminationDate}T12:00:00`
+      : contract.terminatedAt || now;
+    const historyEntry = {
+      editedAt: now,
+      editedBy: user,
+      justification: financial.editJustification,
+      previousOrigin: "source_identified",
+      nextOrigin: "manual_pending",
+    };
+    const adopted = enrichContract({
+      ...sourceContract,
+      previousStatus: sourceContract.appStatus,
+      manualStatus: isDefaultTermination ? STATUS.TERMINATED : STATUS.TERMINATED_OTHER,
+      isDefaultTermination,
+      terminationClassification: isDefaultTermination ? "Inadimplência" : "Outros motivos",
+      terminationReason: reason,
+      terminationObservation: financial.observation || "",
+      terminationApproach: financial.approach,
+      terminatedAt,
+      terminatedBy: user,
+      hasRetention: Boolean(financial.hasRetention),
+      retainedValue: financial.hasRetention ? Number(financial.retainedValue || 0) : 0,
+      retentionTotal: Boolean(financial.retentionTotal),
+      hasRefund: Boolean(financial.hasRefund),
+      refundValue: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
+      reconciliationStatus: "manual_pending",
+      sourceConfirmedAt: null,
+      sourceConfirmationDate: null,
+      sourceConfirmationReason: null,
+      sourceConfirmationPayload: null,
+      lastEditedAt: now,
+      lastEditedBy: user,
+      lastEditJustification: financial.editJustification,
+      terminationEditHistory: [historyEntry],
+      lastUpdatedAt: now,
+      localUser: user,
+    });
+
+    await this.putTerminated(adopted);
+    await this.setSourceTerminations(sourceTerminations.filter((item) => item.contractId !== contract.contractId));
+    await this.addAuditLog({
+      contractId: contract.contractId,
+      action: "adopt-source-termination",
+      user,
+      reason,
+      justification: financial.editJustification,
+      previousOrigin: "source_identified",
+      nextOrigin: "manual_pending",
+    });
+  }
+
   async getSettings() {
     const settings = await this.storage.getAll("settings");
     return Object.fromEntries(settings.map((item) => [item.key, item.value]));

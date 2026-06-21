@@ -342,6 +342,22 @@ export class SupabaseProvider extends Database {
     });
   }
 
+  async adoptSourceTermination(contract, reason, user, financial = {}) {
+    await this.client.rpc("adopt_source_termination", {
+      p_contract_id: contract.contractId,
+      p_reason_category: reason,
+      p_observation: financial.observation || "",
+      p_approach_type: financial.approach,
+      p_termination_date: dateOnly(financial.terminationDate),
+      p_has_retention: Boolean(financial.hasRetention),
+      p_retained_value: financial.hasRetention ? Number(financial.retainedValue || 0) : 0,
+      p_retention_total: Boolean(financial.retentionTotal),
+      p_has_refund: Boolean(financial.hasRefund),
+      p_refund_value: financial.hasRefund ? Number(financial.refundValue || 0) : 0,
+      p_edit_justification: financial.editJustification,
+    });
+  }
+
   async restoreContract(contractId) {
     await this.client.rpc("restore_contract_v2", {
       p_contract_id: contractId,

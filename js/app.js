@@ -1,5 +1,5 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260619-2";
-import { DistratoService } from "./distratos.js?v=20260615-1";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260621-1";
+import { DistratoService } from "./distratos.js?v=20260621-1";
 import { parseWorkbookFile } from "./upload.js?v=20260619-1";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
@@ -25,7 +25,7 @@ import {
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.06.20.1";
+const APP_VERSION = "2026.06.21.1";
 const state = {
   contracts: [],
   terminated: [],
@@ -394,9 +394,11 @@ function bindEvents() {
     cancelImport();
   });
   document.getElementById("executiveReportButton").addEventListener("click", printExecutivePortfolioReport);
+  document.getElementById("operationalListReportButton").addEventListener("click", printOperationalListReport);
   document.getElementById("presentationModeButton").addEventListener("click", togglePresentationMode);
   document.getElementById("presentationExitButton").addEventListener("click", togglePresentationMode);
   document.getElementById("executivePanel").addEventListener("click", handleExecutiveMetricAction);
+  document.getElementById("operationalKpis").addEventListener("click", handleExecutiveMetricAction);
   document.getElementById("newTerminationButton").addEventListener("click", openTerminationFromHub);
   document.getElementById("formalTerminationReportButton").addEventListener("click", () => printTerminationReport("formal"));
   document.getElementById("executiveTerminationReportButton").addEventListener("click", () => printTerminationReport("executive"));
@@ -696,7 +698,7 @@ function switchTab(target) {
 const TOPBAR_CONTENT = {
   operational: {
     eyebrow: "Operação da carteira",
-    title: "Operacionalização",
+    title: "Lista Operacional",
     description: "Priorize contratos, registre contexto e acompanhe a exposição financeira.",
   },
   terminations: {
@@ -1007,13 +1009,23 @@ function sortBy(key) {
 
 function renderOperationalKpis() {
   const kpis = calculateKpis(state.filtered, state.terminated);
+  const conservativeRecovery = state.recoverableScenario === "conservative";
+  const displayedRecoverable = conservativeRecovery ? kpis.recoverableValue * 0.5 : kpis.recoverableValue;
   document.getElementById("operationalKpis").innerHTML = [
-    metric("Contratos Ativos", kpis.totalActive, "Carteira filtrada", "brand", "", "operational-primary-kpi"),
+    metric("Contratos Ativos", kpis.totalActive, "Carteira filtrada", "", "", "operational-primary-kpi"),
     metric("Inadimplentes", kpis.totalDefaulted, formatPercent(kpis.totalActive ? kpis.totalDefaulted / kpis.totalActive : 0), "danger", "", "operational-primary-kpi"),
     metric("Aging 90+ Dias", kpis.aging90Plus, "Prioridade alta", "warning", "", "operational-primary-kpi"),
     metric("Aging 180+ Dias", kpis.aging180Plus, "Risco crítico", "danger", "", "operational-primary-kpi"),
     metric("Aging Médio", `${Math.round(kpis.averageAging)} dias`, "Pela data próximo vencimento", "brand", "", "operational-primary-kpi"),
-    metric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "Integralizado dos inadimplentes", "navy", "", "operational-primary-kpi"),
+    metricToggle(
+      conservativeRecovery ? "Cenário Conservador 50%" : "Potencial Recuperável",
+      formatCurrency(displayedRecoverable),
+      conservativeRecovery ? "Metade do potencial · clique para valor total" : "Integralizado dos inadimplentes · clique para cenário 50%",
+      "navy",
+      "recoverable-scenario",
+      conservativeRecovery,
+      "operational-primary-kpi",
+    ),
   ].join("");
   document.getElementById("operationalKpis").classList.add("show-all");
   const toggle = document.getElementById("operationalKpiToggle");
@@ -1116,11 +1128,12 @@ function metric(label, value, helper, tone = "", id = "", className = "") {
   return `<article class="metric-card${toneClass}${extraClass}"${idAttribute}><span>${label}</span><strong>${value}</strong><small>${helper}</small></article>`;
 }
 
-function metricToggle(label, value, helper, tone, action, pressed = false) {
+function metricToggle(label, value, helper, tone, action, pressed = false, className = "") {
   const toneClass = tone ? ` metric-card-${tone}` : "";
+  const extraClass = className ? ` ${className}` : "";
   return `
     <button
-      class="metric-card metric-card-toggle${toneClass}"
+      class="metric-card metric-card-toggle${toneClass}${extraClass}"
       type="button"
       data-metric-action="${action}"
       aria-pressed="${pressed}"
@@ -1145,7 +1158,8 @@ function handleExecutiveMetricAction(event) {
   }
   if (action === "recoverable-scenario") {
     state.recoverableScenario = state.recoverableScenario === "full" ? "conservative" : "full";
-    renderExecutive();
+    renderOperationalKpis();
+    if (document.getElementById("executivePanel").classList.contains("active")) renderExecutive();
     return;
   }
   if (action === "open-data-health") {
@@ -1948,7 +1962,11 @@ function renderTerminatedTable() {
   `).join("") || emptyRow(11, "Nenhum distrato encontrado para estes filtros.");
   document.querySelectorAll(".edit-termination-button").forEach((button) => {
     button.addEventListener("click", () => {
-      const contract = state.terminated.find((item) => item.contractId === button.dataset.id);
+      const contract = getUnifiedTerminations().find((item) => item.contractId === button.dataset.id);
+      if (!contract) {
+        toast("Não foi possível localizar este distrato.");
+        return;
+      }
       state.terminationTrigger = button;
       openTerminateDialog({ editContract: contract });
     });
@@ -2058,7 +2076,7 @@ function reconciliationLabel(value) {
 
 function canEditTermination(contract) {
   if (!state.canWrite) return false;
-  if (contract.sourceOnlyTermination) return false;
+  if (contract.sourceOnlyTermination) return true;
   if (state.currentRole === "admin") return true;
   if (state.currentUserId) return contract.terminatedById === state.currentUserId;
   return Boolean(contract.terminatedBy) && contract.terminatedBy === state.currentUser;
@@ -3116,6 +3134,96 @@ function cancelImport() {
 function closeImportDialog() {
   state.pendingImport = null;
   document.getElementById("importDialog").close();
+}
+
+function printOperationalListReport() {
+  const contracts = applyFilters(state.contracts);
+  if (!contracts.length) {
+    toast("Não há contratos no filtro atual para gerar a lista.");
+    return;
+  }
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    toast("O navegador bloqueou a abertura do relatório. Libere pop-ups para este site.");
+    return;
+  }
+  reportWindow.opener = null;
+  const kpis = calculateKpis(contracts, state.terminated);
+  const logoUrl = new URL("assets/shortcut-logo.png", window.location.href).href;
+  const defaultedOnly = document.getElementById("statusFilter").value === STATUS.DEFAULTED;
+  const title = defaultedOnly ? "Lista de Inadimplentes" : "Lista";
+  const filterSummary = portfolioFilterSummary();
+  reportWindow.document.write(`<!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8">
+        <title>${escapeHtml(title)}</title>
+        <style>${operationalListReportStyles()}</style>
+      </head>
+      <body>
+        <header>
+          <img src="${escapeAttr(logoUrl)}" alt="Villamor">
+          <div>
+            <span>VILLAMOR · PÓS-VENDA VIP</span>
+            <h1>${escapeHtml(title)}</h1>
+            <p>Lista Operacional · Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p>
+            ${filterSummary ? `<small class="report-filter-summary">${escapeHtml(filterSummary)}</small>` : ""}
+          </div>
+        </header>
+        <section class="list-summary">
+          ${reportMetric("Contratos", kpis.totalActive, "", "Registros no filtro atual")}
+          ${reportMetric("Integralizado", formatCurrency(kpis.totalIntegralized), "recovered", "Valor pago nos contratos filtrados")}
+          ${reportMetric("Valor em Atraso", formatCurrency(kpis.totalOverdue), "refund", "Exposição financeira filtrada")}
+          ${reportMetric("Potencial Recuperável", formatCurrency(kpis.recoverableValue), "navy", "Integralizado dos inadimplentes")}
+        </section>
+        <table>
+          <thead>
+            <tr>
+              <th>Contrato</th><th>Localizador</th><th>Cliente</th><th>Categoria</th>
+              <th>Grupo</th><th>Integralizado</th><th>Atraso</th><th>Dias</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody>${contracts.map((contract) => `
+            <tr>
+              <td><strong>${escapeHtml(contractDisplayCode(contract))}</strong></td>
+              <td>${escapeHtml(contractLocalizer(contract))}</td>
+              <td>${escapeHtml(contract.primaryClient || "-")}</td>
+              <td>${escapeHtml(contract.category || "Não classificado")}</td>
+              <td>${escapeHtml(contract.product || "-")}</td>
+              <td>${escapeHtml(formatCurrency(contract.effectivePaidValue))}</td>
+              <td>${escapeHtml(formatCurrency(contract.overdueValue))}</td>
+              <td>${escapeHtml(contract.daysOverdue)}</td>
+              <td>${escapeHtml(contract.appStatus || "-")}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+        <footer>Documento gerado pelo PÓS-VENDA VIP · A lista respeita todos os filtros ativos no momento da emissão.</footer>
+        <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
+      </body>
+    </html>`);
+  reportWindow.document.close();
+}
+
+function operationalListReportStyles() {
+  return `
+    @page{size:A4 landscape;margin:10mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{margin:0;color:#29191e;font:10px Arial,sans-serif;background:#fff}
+    header{display:flex;align-items:center;gap:14px;padding-bottom:12px;border-bottom:3px solid #a62552}
+    header img{width:58px;height:58px;border-radius:8px;object-fit:cover}
+    header span{font-size:9px;font-weight:700;color:#a62552}h1{margin:3px 0;font-size:22px}
+    header p{margin:0;color:#6f6267}.report-filter-summary{display:block;margin-top:4px;color:#55484d}
+    .list-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin:12px 0}
+    .report-metric{padding:10px;border:1px solid #dfd5d9;border-bottom:4px solid #a62552;border-radius:6px;background:#fff}
+    .report-metric span{display:block;color:#8f2349;font-size:9px;font-weight:700;text-transform:uppercase}
+    .report-metric strong{display:block;margin-top:5px;font-size:15px}.report-metric small{display:block;margin-top:4px;color:#75666c;font-size:8px}
+    .report-metric.tone-recovered{border-color:#b8e5cf;border-bottom-color:#079455;background:#f1fbf6}.report-metric.tone-recovered span{color:#087a49}
+    .report-metric.tone-refund{border-color:#f0d78b;border-bottom-color:#d39b00;background:#fff9e8}.report-metric.tone-refund span{color:#9b7000}
+    .report-metric.tone-navy{border-color:#b8cde0;border-bottom-color:#1b4d77;background:#f2f7fb}.report-metric.tone-navy span{color:#1b4d77}
+    table{width:100%;border-collapse:collapse;font-size:8px;table-layout:fixed}th{padding:6px;background:#3c2029;color:#fff;text-align:left}
+    td{padding:5px 6px;border-bottom:1px solid #e5dde0;vertical-align:top;overflow-wrap:anywhere}
+    th:nth-child(1){width:11%}th:nth-child(2){width:8%}th:nth-child(3){width:18%}th:nth-child(4){width:9%}
+    th:nth-child(5){width:17%}th:nth-child(6),th:nth-child(7){width:11%}th:nth-child(8){width:6%}th:nth-child(9){width:9%}
+    footer{margin-top:12px;padding-top:7px;border-top:1px solid #ddd;color:#776a6f;font-size:8px;text-align:center}`;
 }
 
 function printTerminationReport(type) {

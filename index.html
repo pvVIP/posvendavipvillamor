@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260620-1">
+  <link rel="stylesheet" href="css/style.css?v=20260621-1">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260620-1" type="module"></script>
+  <script src="js/app.js?v=20260621-1" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -70,9 +70,9 @@
         </button>
       </div>
       <nav class="nav-tabs" id="primaryNavigation" aria-label="Navegação principal">
-        <button class="nav-tab active" id="operationalTab" type="button" data-tab-target="operational" aria-controls="operationalPanel" aria-label="Operacionalização" title="Operacionalização">
+        <button class="nav-tab active" id="operationalTab" type="button" data-tab-target="operational" aria-controls="operationalPanel" aria-label="Lista Operacional" title="Lista Operacional">
           <span class="nav-icon" aria-hidden="true">▦</span>
-          <span class="nav-label">OPERACIONALIZAÇÃO</span>
+          <span class="nav-label">LISTA OPERACIONAL</span>
         </button>
         <button class="nav-tab" id="terminationsTab" type="button" data-tab-target="terminations" aria-controls="terminationsPanel" aria-label="Distratos" title="Distratos">
           <span class="nav-icon" aria-hidden="true">×</span>
@@ -123,11 +123,12 @@
       <header class="topbar">
         <div class="topbar-context">
           <p class="eyebrow" id="topbarEyebrow">Operação da carteira</p>
-          <h1 id="topbarTitle">Operacionalização</h1>
+          <h1 id="topbarTitle">Lista Operacional</h1>
           <p id="topbarDescription">Priorize contratos, registre contexto e acompanhe a exposição financeira.</p>
         </div>
         <div class="topbar-actions">
           <button class="secondary-button contextual-action" id="refreshButton" type="button" data-tabs="operational terminations reversions health executive">Recalcular</button>
+          <button class="secondary-button contextual-action" id="operationalListReportButton" type="button" data-tabs="operational">LISTA</button>
           <label class="primary-button file-button contextual-action" data-tabs="operational health">
             Atualização
             <input type="file" id="uploadInput" accept=".xlsx,.xls" aria-label="Selecionar planilha para atualização">
