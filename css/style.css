@@ -1586,6 +1586,191 @@ canvas {
   font-weight: 700;
 }
 
+.neutral-alert {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.simulation-modal {
+  width: min(820px, calc(100vw - 32px));
+}
+
+.simulation-identification-grid,
+.rescission-calculator-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.simulation-identification-grid {
+  margin: 12px 0;
+}
+
+.rescission-calculator {
+  display: grid;
+  gap: 14px;
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid rgba(157, 42, 79, 0.18);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(255, 174, 128, 0.12), rgba(210, 55, 91, 0.08)),
+    var(--surface-soft);
+}
+
+.rescission-calculator[hidden] {
+  display: none;
+}
+
+.rescission-calculator-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rescission-calculator-heading span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--brand-dark);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.rescission-calculator-heading h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.rescission-calculator-grid label small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.rescission-result {
+  display: grid;
+  gap: 10px;
+}
+
+.rescission-table {
+  overflow: hidden;
+  border: 1px solid rgba(176, 91, 51, 0.32);
+  border-radius: 8px;
+  box-shadow: 0 8px 22px rgba(70, 28, 24, 0.08);
+}
+
+.rescission-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(128px, auto);
+  min-height: 34px;
+  border-bottom: 1px solid rgba(111, 51, 35, 0.18);
+  color: #341d19;
+}
+
+.rescission-row:last-child {
+  border-bottom: 0;
+}
+
+.rescission-row span,
+.rescission-row strong {
+  display: flex;
+  align-items: center;
+  padding: 8px 10px;
+}
+
+.rescission-row span {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rescission-row strong {
+  justify-content: flex-end;
+  border-left: 1px solid rgba(111, 51, 35, 0.16);
+  font-size: 13px;
+}
+
+.rescission-row-neutral {
+  background: #ffb078;
+}
+
+.rescission-row-positive {
+  background: #ffc399;
+}
+
+.rescission-row-negative {
+  background: #ff8f94;
+  color: #9b0b20;
+}
+
+.rescission-row-negative strong {
+  color: #c00020;
+}
+
+.rescission-row-total,
+.rescission-row-negative-total {
+  font-weight: 800;
+}
+
+.rescission-outcome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  color: #fff;
+  box-shadow: var(--shadow-soft);
+}
+
+.rescission-outcome span {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rescission-outcome strong {
+  font-size: 20px;
+}
+
+.rescission-outcome-refund {
+  background: linear-gradient(135deg, #087a49, #20b875);
+}
+
+.rescission-outcome-debt {
+  background: linear-gradient(135deg, #8f2349, #d13d58);
+}
+
+.rescission-formula {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+[data-theme="dark"] .rescission-calculator {
+  border-color: rgba(255, 154, 178, 0.2);
+  background:
+    linear-gradient(135deg, rgba(255, 174, 128, 0.1), rgba(210, 55, 91, 0.13)),
+    rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="dark"] .rescission-calculator-heading span {
+  color: #ff8bab;
+}
+
+[data-theme="dark"] .rescission-row {
+  color: #2c1515;
+}
+
+[data-theme="dark"] .neutral-alert,
+[data-theme="dark"] .rescission-formula {
+  color: #d7dde3;
+}
+
 .termination-financial-warning {
   overflow: hidden;
   margin-top: 12px;
@@ -1987,6 +2172,36 @@ canvas {
 }
 
 @media (max-width: 720px) {
+  .simulation-identification-grid,
+  .rescission-calculator-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rescission-calculator-heading,
+  .rescission-outcome {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .rescission-calculator-heading button,
+  .rescission-outcome strong {
+    width: 100%;
+  }
+
+  .rescission-outcome strong {
+    text-align: left;
+  }
+
+  .rescission-row {
+    grid-template-columns: 1fr;
+  }
+
+  .rescission-row strong {
+    justify-content: flex-start;
+    border-left: 0;
+    border-top: 1px solid rgba(111, 51, 35, 0.16);
+  }
+
   .mobile-contract-actions {
     flex-wrap: wrap;
   }

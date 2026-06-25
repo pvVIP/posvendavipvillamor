@@ -16,8 +16,12 @@ export function calculateKpis(contracts, terminatedContracts = []) {
   const defaulted = active.filter((item) => item.appStatus === STATUS.DEFAULTED);
   const late = active.filter((item) => item.appStatus === STATUS.LATE);
   const current = active.filter((item) => item.appStatus === STATUS.CURRENT || item.appStatus === STATUS.PAID);
+  const financedComparable = active.filter((item) => toNumber(item.financedValue) > 0);
   const totalPortfolio = sum(active, "totalUpdatedValue");
   const totalIntegralized = sum(active, "effectivePaidValue");
+  const totalFinanced = sum(financedComparable, "financedValue");
+  const totalUpdatedComparable = sum(financedComparable, "totalUpdatedValue");
+  const totalAppreciation = totalFinanced ? totalUpdatedComparable - totalFinanced : 0;
   const totalReceivable = active.reduce((total, item) => {
     const sourceBalance = toNumber(item.remainingBalance);
     const derivedBalance = Math.max(0, toNumber(item.totalUpdatedValue) - toNumber(item.effectivePaidValue));
@@ -41,6 +45,12 @@ export function calculateKpis(contracts, terminatedContracts = []) {
     totalTerminated: terminatedContracts.length,
     totalPortfolio,
     totalIntegralized,
+    totalFinanced,
+    totalUpdatedComparable,
+    totalAppreciation,
+    appreciationRate: totalFinanced ? totalAppreciation / totalFinanced : 0,
+    financedCoverage: active.length ? financedComparable.length / active.length : 0,
+    financedContracts: financedComparable.length,
     totalReceivable,
     totalOverdue,
     totalDefaultedOverdue,

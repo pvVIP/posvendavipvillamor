@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260621-3">
+  <link rel="stylesheet" href="css/style.css?v=20260625-2">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260621-1" type="module"></script>
+  <script src="js/app.js?v=20260625-2" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -264,6 +264,7 @@
           </div>
           <div class="termination-hub-actions">
             <button class="primary-button" id="newTerminationButton" type="button">Lançar distrato</button>
+            <button class="secondary-button" id="simulateTerminationButton" type="button">Simulação</button>
             <button class="secondary-button" id="formalTerminationReportButton" type="button">Relatório de distratos</button>
             <button class="secondary-button" id="executiveTerminationReportButton" type="button">Resumo diretoria</button>
           </div>
@@ -653,6 +654,40 @@
         <div class="contract-search-results" id="terminationContractResults" role="listbox" aria-label="Contratos encontrados" hidden></div>
       </label>
       <div class="termination-contract-summary" id="terminationContractSummary"></div>
+      <section class="rescission-calculator termination-calculator" id="terminationCalculator" aria-labelledby="terminationCalculatorTitle" hidden>
+        <div class="rescission-calculator-heading">
+          <div>
+            <span>SIMULAÇÃO FINANCEIRA</span>
+            <h3 id="terminationCalculatorTitle">Calculadora do distrato</h3>
+          </div>
+          <button class="secondary-button compact" id="applyTerminationCalculatorButton" type="button">Aplicar na confirmação</button>
+        </div>
+        <div class="rescission-calculator-grid">
+          <label>
+            Valor financiado do contrato
+            <span class="money-input-shell">
+              <span class="money-input-prefix">R$</span>
+              <input type="text" id="terminationCalcContractValue" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            </span>
+            <small>Valor efetivo da compra. Quando a base não trouxer esse campo, o sistema sugere o valor disponível.</small>
+          </label>
+          <label>
+            Integralizado pelo cliente
+            <span class="money-input-shell">
+              <span class="money-input-prefix">R$</span>
+              <input type="text" id="terminationCalcPaidValue" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            </span>
+          </label>
+          <label>
+            Brindes e benefícios
+            <span class="money-input-shell">
+              <span class="money-input-prefix">R$</span>
+              <input type="text" id="terminationCalcGiftValue" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            </span>
+          </label>
+        </div>
+        <div class="rescission-result" id="terminationCalculatorResult" aria-live="polite"></div>
+      </section>
       <label class="termination-date-field">
         Data do distrato
         <input type="date" id="terminationDate">
@@ -741,6 +776,71 @@
       <div class="modal-actions">
         <button type="button" class="secondary-button" id="cancelTerminationButton">Cancelar</button>
         <button type="submit" value="confirm" class="danger-button" id="confirmTerminationButton">Confirmar Distrato</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="simulationDialog" class="modal simulation-modal" aria-labelledby="simulationDialogTitle" aria-describedby="simulationDialogDescription">
+    <form method="dialog" id="simulationForm">
+      <h2 id="simulationDialogTitle">Simulação de rescisão</h2>
+      <p class="modal-alert neutral-alert" id="simulationDialogDescription">Pesquise um contrato para preencher os valores ou faça a simulação manualmente.</p>
+      <label>
+        Buscar contrato existente
+        <input type="search" id="simulationContractSearch" autocomplete="off" placeholder="Digite cliente, contrato, localizador, CPF ou telefone" aria-autocomplete="list" aria-controls="simulationContractResults">
+        <div class="contract-search-results" id="simulationContractResults" role="listbox" aria-label="Contratos encontrados para simulação" hidden></div>
+      </label>
+      <div class="termination-contract-summary" id="simulationContractSummary" hidden></div>
+      <div class="simulation-identification-grid">
+        <label>
+          Cliente
+          <input type="text" id="simulationClientName" maxlength="120" placeholder="Cliente da simulação">
+        </label>
+        <label>
+          Contrato
+          <input type="text" id="simulationContractCode" maxlength="80" placeholder="Número do contrato">
+        </label>
+        <label>
+          Localizador
+          <input type="text" id="simulationLocalizer" maxlength="80" placeholder="Localizador">
+        </label>
+      </div>
+      <section class="rescission-calculator" aria-labelledby="simulationCalculatorTitle">
+        <div class="rescission-calculator-heading">
+          <div>
+            <span>CENÁRIO DA RESCISÃO</span>
+            <h3 id="simulationCalculatorTitle">Calculadora</h3>
+          </div>
+          <button class="ghost-button compact" id="clearSimulationContractButton" type="button">Simular do zero</button>
+        </div>
+        <div class="rescission-calculator-grid">
+          <label>
+            Valor financiado do contrato
+            <span class="money-input-shell">
+              <span class="money-input-prefix">R$</span>
+              <input type="text" id="simulationContractValue" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            </span>
+          </label>
+          <label>
+            Integralizado pelo cliente
+            <span class="money-input-shell">
+              <span class="money-input-prefix">R$</span>
+              <input type="text" id="simulationPaidValue" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            </span>
+          </label>
+          <label>
+            Brindes e benefícios
+            <span class="money-input-shell">
+              <span class="money-input-prefix">R$</span>
+              <input type="text" id="simulationGiftValue" inputmode="decimal" autocomplete="off" placeholder="0,00">
+            </span>
+          </label>
+        </div>
+        <div class="rescission-result" id="simulationCalculatorResult" aria-live="polite"></div>
+      </section>
+      <p class="field-error" id="simulationError" hidden>Informe pelo menos o valor do contrato ou o valor integralizado para emitir o cenário.</p>
+      <div class="modal-actions">
+        <button type="button" class="secondary-button" id="cancelSimulationButton">Fechar</button>
+        <button type="button" class="primary-button" id="printSimulationReportButton">Emitir PDF</button>
       </div>
     </form>
   </dialog>

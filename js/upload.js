@@ -35,6 +35,17 @@ const FIELD_ALIASES = {
   ],
   effectivePaidPercent: ["percentual integralizado efetivo", "percentual pago efetivo"],
   remainingBalance: ["saldo restante", "saldo devedor", "saldo"],
+  financedValue: [
+    "valor financiado",
+    "valor financiado contrato",
+    "valor financiado do contrato",
+    "valor da compra",
+    "valor na compra",
+    "valor de aquisicao",
+    "valor aquisicao",
+    "valor original contrato",
+    "valor original do contrato",
+  ],
   totalUpdatedValue: ["valor total atualizado", "valor contrato", "valor total", "valor da venda"],
   overdueValue: ["valor atrasado", "valor em atraso", "saldo atrasado", "inadimplencia"],
   paidPercent: ["percentual integralizado", "percentual pago"],
@@ -53,6 +64,7 @@ const FIELD_LABELS = {
   primaryClient: "cliente principal",
   product: "produto/grupo",
   effectivePaidValue: "valor integralizado",
+  financedValue: "valor financiado",
   overdueValue: "valor em atraso",
   nextDueDate: "data do próximo vencimento",
 };
@@ -139,6 +151,7 @@ function removeVerifiedSummaryRows(rows, resolvedHeaders) {
     resolvedHeaders.get("entryValue"),
     resolvedHeaders.get("effectivePaidValue"),
     resolvedHeaders.get("remainingBalance"),
+    resolvedHeaders.get("financedValue"),
     resolvedHeaders.get("totalUpdatedValue"),
     resolvedHeaders.get("overdueValue"),
   ].filter(Boolean);
@@ -247,12 +260,14 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   const effectivePaidPercentHeader = resolvedHeaders.get("effectivePaidPercent");
   const paidPercentHeader = resolvedHeaders.get("paidPercent");
   const remainingHeader = resolvedHeaders.get("remainingBalance");
+  const financedHeader = resolvedHeaders.get("financedValue");
   const totalHeader = resolvedHeaders.get("totalUpdatedValue");
   const overdueHeader = resolvedHeaders.get("overdueValue");
   const terminationDateHeader = resolvedHeaders.get("sourceTerminationDate");
   const terminationReasonHeader = resolvedHeaders.get("sourceTerminationReason");
   const seen = new Set();
   let negativeTotalCount = 0;
+  let negativeFinancedCount = 0;
   let negativeOverdueCount = 0;
   let missingClientCount = 0;
   let missingContractCodeCount = 0;
@@ -282,6 +297,7 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
       }
     }
     if (totalHeader && toNumber(row[totalHeader]) < 0) negativeTotalCount += 1;
+    if (financedHeader && toNumber(row[financedHeader]) < 0) negativeFinancedCount += 1;
     if (overdueHeader && toNumber(row[overdueHeader]) < 0) negativeOverdueCount += 1;
     if (clientHeader && !row[clientHeader]) missingClientCount += 1;
     const total = totalHeader ? Math.max(0, toNumber(row[totalHeader])) : 0;
@@ -327,6 +343,11 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   if (negativeTotalCount) {
     warnings.push(
       `${negativeTotalCount} registros possuem valor total negativo. O valor original será preservado e zero será usado nos indicadores para não reduzir artificialmente a carteira.`,
+    );
+  }
+  if (negativeFinancedCount) {
+    warnings.push(
+      `${negativeFinancedCount} registros possuem valor financiado negativo. O valor original serÃ¡ preservado e zero serÃ¡ usado nas comparaÃ§Ãµes de valor de compra.`,
     );
   }
   if (negativeOverdueCount) {
@@ -441,8 +462,10 @@ function normalizeImportedRow(row, resolvedHeaders) {
   const product = String(output.product || "");
   const sourceTermination = detectSourceTermination(row, output);
   const totalUpdatedValue = toNumber(output.totalUpdatedValue);
+  const financedValue = toNumber(output.financedValue);
   const overdueValue = toNumber(output.overdueValue);
   const sourceFinancialAdjustments = {
+    financedValue: financedValue < 0 ? financedValue : null,
     totalUpdatedValue: totalUpdatedValue < 0 ? totalUpdatedValue : null,
     overdueValue: overdueValue < 0 ? overdueValue : null,
   };
@@ -459,6 +482,7 @@ function normalizeImportedRow(row, resolvedHeaders) {
     effectivePaidValue: toNumber(output.effectivePaidValue),
     effectivePaidPercent: toNumber(output.effectivePaidPercent),
     remainingBalance: toNumber(output.remainingBalance),
+    financedValue: Math.max(0, financedValue),
     totalUpdatedValue: Math.max(0, totalUpdatedValue),
     overdueValue: Math.max(0, overdueValue),
     paidPercent: toNumber(output.paidPercent),

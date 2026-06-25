@@ -1,6 +1,6 @@
 import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260621-1";
 import { DistratoService } from "./distratos.js?v=20260621-1";
-import { parseWorkbookFile } from "./upload.js?v=20260619-1";
+import { parseWorkbookFile } from "./upload.js?v=20260625-1";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
 import {
@@ -21,11 +21,11 @@ import {
   groupByCategory,
   getHeatmapData,
   getTopDefaulted,
-} from "./dashboard.js?v=20260617-1";
+} from "./dashboard.js?v=20260625-1";
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.06.21.1";
+const APP_VERSION = "2026.06.25.2";
 const state = {
   contracts: [],
   terminated: [],
@@ -54,6 +54,7 @@ const state = {
   pendingTermination: [],
   editingTermination: null,
   terminationTrigger: null,
+  simulationContract: null,
   pendingImport: null,
   installPrompt: null,
   canWrite: true,
@@ -379,11 +380,33 @@ function bindEvents() {
   document.getElementById("terminationContractSearch").addEventListener("focus", renderTerminationContractResults);
   document.getElementById("terminationContractSearch").addEventListener("keydown", handleTerminationContractSearchKeydown);
   document.getElementById("terminationContractResults").addEventListener("click", handleTerminationContractResultClick);
-  ["retainedValue", "refundValue"].forEach((id) => {
+  [
+    "retainedValue",
+    "refundValue",
+    "terminationCalcContractValue",
+    "terminationCalcPaidValue",
+    "terminationCalcGiftValue",
+    "simulationContractValue",
+    "simulationPaidValue",
+    "simulationGiftValue",
+  ].forEach((id) => {
     const input = document.getElementById(id);
     input.addEventListener("input", handleMoneyInput);
     input.addEventListener("blur", formatMoneyInput);
   });
+  document.getElementById("applyTerminationCalculatorButton").addEventListener("click", applyTerminationCalculatorToFinancialFields);
+  document.getElementById("simulateTerminationButton").addEventListener("click", openTerminationSimulation);
+  document.getElementById("simulationContractSearch").addEventListener("input", renderSimulationContractResults);
+  document.getElementById("simulationContractSearch").addEventListener("focus", renderSimulationContractResults);
+  document.getElementById("simulationContractSearch").addEventListener("keydown", handleSimulationContractSearchKeydown);
+  document.getElementById("simulationContractResults").addEventListener("click", handleSimulationContractResultClick);
+  document.getElementById("clearSimulationContractButton").addEventListener("click", clearSimulationScenario);
+  document.getElementById("cancelSimulationButton").addEventListener("click", closeSimulationDialog);
+  document.getElementById("simulationDialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeSimulationDialog();
+  });
+  document.getElementById("printSimulationReportButton").addEventListener("click", printRescissionScenarioReport);
   document.getElementById("uploadInput").addEventListener("change", handleUpload);
   document.getElementById("cancelImportButton").addEventListener("click", cancelImport);
   document.getElementById("confirmImportButton").addEventListener("click", () => confirmImport(false));
@@ -1060,6 +1083,8 @@ function renderExecutive() {
     metric("Carteira Total", formatCurrency(kpis.totalPortfolio), "Valor total atualizado", "brand"),
     metric("Carteira Integralizada", formatCurrency(kpis.totalIntegralized), "Valor já pago pelos clientes", "success"),
     metric("Saldo a Receber", formatCurrency(kpis.totalReceivable), "Valor ainda previsto para recebimento", "navy"),
+    metric("Valor Financiado", formatCurrency(kpis.totalFinanced), `${kpis.financedContracts} contratos com base de compra`, "brand"),
+    metric("Valorização Atualizada", formatCurrency(kpis.totalAppreciation), `${formatPercent(kpis.appreciationRate)} sobre o valor financiado`, kpis.totalAppreciation >= 0 ? "success" : "danger"),
   ].join("");
   document.getElementById("executiveRiskKpis").innerHTML = [
     metric("Valor em Atraso", formatCurrency(kpis.totalOverdue), "Todos os contratos com atraso", "warning"),
@@ -1098,6 +1123,7 @@ function renderExecutive() {
   ].join("");
   document.getElementById("executiveComplementaryKpis").innerHTML = [
     metric("Ticket Médio", formatCurrency(kpis.averageTicket), "Contratos ativos", "brand"),
+    metric("Cobertura Financiado", formatPercent(kpis.financedCoverage), "Contratos com valor de compra", "navy"),
     metric("Faixa Crítica", `${kpis.aging180Plus} contratos`, "Mais de 180 dias", "danger"),
     metric("Concentração por Categoria", formatPercent(categoryConcentration), categoryRisk?.label || "Sem exposição", "warning"),
     metric("Top Inadimplentes", formatCurrency(topDefaulted?.overdueValue || 0), "Maior exposição individual 90+", "danger"),
@@ -1590,6 +1616,7 @@ function openTerminateDialog() {
       : "";
   }
   syncTerminationFinancialFields();
+  resetTerminationCalculator(state.pendingTermination.length === 1 ? state.pendingTermination[0] : null);
   renderTerminationContractSummary();
   document.getElementById("terminateDialog").showModal();
   if (selectContract) {
@@ -1725,6 +1752,7 @@ function handleTerminationContractSelection(event) {
   state.pendingTermination = contract ? [contract] : [];
   document.getElementById("terminationFinancialError").hidden = true;
   syncTerminationFinancialFields();
+  resetTerminationCalculator(contract || null);
   renderTerminationContractSummary();
 }
 
@@ -1804,8 +1832,15 @@ function handleTerminationContractSearchKeydown(event) {
 
 function handleContractSearchOutsideClick(event) {
   const field = document.getElementById("terminationContractField");
-  if (field.hidden || field.contains(event.target)) return;
-  document.getElementById("terminationContractResults").hidden = true;
+  if (!field.hidden && !field.contains(event.target)) {
+    document.getElementById("terminationContractResults").hidden = true;
+  }
+  const simulationDialog = document.getElementById("simulationDialog");
+  const simulationSearch = document.getElementById("simulationContractSearch");
+  const simulationResults = document.getElementById("simulationContractResults");
+  if (simulationDialog.open && !simulationSearch.contains(event.target) && !simulationResults.contains(event.target)) {
+    simulationResults.hidden = true;
+  }
 }
 
 function normalizeSearchValue(value) {
@@ -1850,7 +1885,7 @@ function renderTerminationContractSummary() {
   summary.innerHTML = `
     <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
     <span>Contrato ${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</span>
-    <small>Integralizado: ${formatCurrency(contract.effectivePaidValue)}</small>
+    <small>Integralizado: ${formatCurrency(contract.effectivePaidValue)} · Valor financiado: ${escapeHtml(formatOptionalCurrency(appreciation.financed))}</small>
   `;
 }
 
@@ -1910,17 +1945,430 @@ function handleMoneyInput(event) {
   input.value = value;
   if (cursorAtEnd) input.setSelectionRange(value.length, value.length);
   updateTerminationFinancialWarning();
+  updateRescissionCalculatorForInput(input.id);
 }
 
 function formatMoneyInput(event) {
   const input = event.target;
-  if (!input.value.trim()) return;
+  if (!input.value.trim()) {
+    updateRescissionCalculatorForInput(input.id);
+    return;
+  }
   const value = toNumber(input.value);
   input.value = new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
   updateTerminationFinancialWarning();
+  updateRescissionCalculatorForInput(input.id);
+}
+
+function updateRescissionCalculatorForInput(inputId) {
+  if (String(inputId).startsWith("terminationCalc")) renderTerminationCalculator();
+  if (String(inputId).startsWith("simulation")) renderSimulationCalculator();
+}
+
+function resetTerminationCalculator(contract) {
+  const calculator = document.getElementById("terminationCalculator");
+  if (!contract) {
+    calculator.hidden = true;
+    ["terminationCalcContractValue", "terminationCalcPaidValue", "terminationCalcGiftValue"].forEach((id) => {
+      document.getElementById(id).value = "";
+    });
+    document.getElementById("terminationCalculatorResult").innerHTML = "";
+    return;
+  }
+  calculator.hidden = false;
+  fillRescissionInputs("termination", contract);
+  renderTerminationCalculator();
+}
+
+function fillRescissionInputs(prefix, contract) {
+  const ids = rescissionInputIds(prefix);
+  document.getElementById(ids.contractValue).value = formatMoneyForInput(preferredContractValue(contract));
+  document.getElementById(ids.paidValue).value = formatMoneyForInput(contract?.effectivePaidValue || 0);
+  document.getElementById(ids.giftValue).value = "";
+}
+
+function preferredContractValue(contract) {
+  if (!contract) return 0;
+  const financed = contractFinancedValue(contract);
+  if (financed > 0) return financed;
+  const extraValue = findMoneyInExtras(contract.sourceExtras, [
+    "valor financiado",
+    "valor total do contrato",
+    "valor original do contrato",
+    "valor da aquisicao",
+    "valor aquisicao",
+    "valor de aquisicao",
+  ]);
+  if (extraValue > 0) return extraValue;
+  const total = toNumber(contract.totalUpdatedValue);
+  if (total > 0) return total;
+  return Math.max(0, toNumber(contract.effectivePaidValue) + toNumber(contract.remainingBalance));
+}
+
+function contractFinancedValue(contract) {
+  const direct = toNumber(contract?.financedValue);
+  if (direct > 0) return direct;
+  return findMoneyInExtras(contract?.sourceExtras, [
+    "valor financiado",
+    "valor da compra",
+    "valor na compra",
+    "valor de aquisicao",
+    "valor aquisicao",
+    "valor original contrato",
+    "valor original do contrato",
+  ]);
+}
+
+function contractAppreciation(contract) {
+  const financed = contractFinancedValue(contract);
+  const updated = toNumber(contract?.totalUpdatedValue);
+  const amount = financed > 0 ? updated - financed : 0;
+  return {
+    financed,
+    updated,
+    amount,
+    rate: financed > 0 ? amount / financed : 0,
+  };
+}
+
+function formatOptionalCurrency(value, fallback = "Não informado") {
+  return toNumber(value) > 0 ? formatCurrency(value) : fallback;
+}
+
+function findMoneyInExtras(extras, normalizedLabels) {
+  if (!extras || typeof extras !== "object") return 0;
+  const wanted = normalizedLabels.map(normalizeSearchValue);
+  const match = Object.entries(extras).find(([header, value]) => {
+    const normalizedHeader = normalizeSearchValue(header);
+    return wanted.some((label) => normalizedHeader.includes(label)) && toNumber(value) > 0;
+  });
+  return match ? toNumber(match[1]) : 0;
+}
+
+function rescissionInputIds(prefix) {
+  if (prefix === "termination") {
+    return {
+      contractValue: "terminationCalcContractValue",
+      paidValue: "terminationCalcPaidValue",
+      giftValue: "terminationCalcGiftValue",
+      result: "terminationCalculatorResult",
+    };
+  }
+  return {
+    contractValue: "simulationContractValue",
+    paidValue: "simulationPaidValue",
+    giftValue: "simulationGiftValue",
+    result: "simulationCalculatorResult",
+  };
+}
+
+function readRescissionScenario(prefix) {
+  const ids = rescissionInputIds(prefix);
+  return calculateRescissionScenario({
+    contractValue: toNumber(document.getElementById(ids.contractValue).value),
+    paidValue: toNumber(document.getElementById(ids.paidValue).value),
+    giftValue: toNumber(document.getElementById(ids.giftValue).value),
+  });
+}
+
+function calculateRescissionScenario(values) {
+  const contractValue = Math.max(0, toNumber(values.contractValue));
+  const paidValue = Math.max(0, toNumber(values.paidValue));
+  const giftValue = Math.max(0, toNumber(values.giftValue));
+  const brokerageValue = contractValue * 0.06;
+  const penaltyValue = paidValue * 0.5;
+  const totalDeductions = brokerageValue + penaltyValue + giftValue;
+  const netResult = paidValue - totalDeductions;
+  return {
+    contractValue,
+    paidValue,
+    brokerageValue,
+    penaltyValue,
+    giftValue,
+    totalDeductions,
+    netResult,
+    outcomeLabel: netResult >= 0 ? "Reembolso estimado" : "Saldo devedor estimado",
+    outcomeValue: Math.abs(netResult),
+    outcomeTone: netResult >= 0 ? "refund" : "debt",
+  };
+}
+
+function renderTerminationCalculator() {
+  const calculator = document.getElementById("terminationCalculator");
+  if (calculator.hidden) return;
+  document.getElementById("terminationCalculatorResult").innerHTML = rescissionScenarioMarkup(readRescissionScenario("termination"));
+}
+
+function renderSimulationCalculator() {
+  document.getElementById("simulationCalculatorResult").innerHTML = rescissionScenarioMarkup(readRescissionScenario("simulation"));
+  document.getElementById("simulationError").hidden = true;
+}
+
+function rescissionScenarioMarkup(scenario) {
+  return `
+    <div class="rescission-table" role="table" aria-label="Memória de cálculo da rescisão">
+      ${rescissionRow("Valor financiado do contrato", scenario.contractValue, "neutral")}
+      ${rescissionRow("Integralizado pelo cliente", scenario.paidValue, "positive")}
+      ${rescissionRow("Corretagem (6%)", -scenario.brokerageValue, "negative")}
+      ${rescissionRow("Multa rescisória (50%)", -scenario.penaltyValue, "negative")}
+      ${rescissionRow("Brindes e benefícios", -scenario.giftValue, "negative")}
+      ${rescissionRow("Total de retenções", -scenario.totalDeductions, "negative total")}
+    </div>
+    <div class="rescission-outcome rescission-outcome-${escapeAttr(scenario.outcomeTone)}">
+      <span>${escapeHtml(scenario.outcomeLabel)}</span>
+      <strong>${escapeHtml(formatCurrency(scenario.outcomeValue))}</strong>
+    </div>
+    <small class="rescission-formula">Fórmula: integralizado pelo cliente menos corretagem, multa e brindes/benefícios.</small>
+  `;
+}
+
+function rescissionRow(label, value, tone) {
+  const amount = tone.includes("negative") && value !== 0
+    ? `-${formatCurrency(Math.abs(value))}`
+    : formatCurrency(value);
+  const toneClasses = tone.split(/\s+/).filter(Boolean).map((item) => `rescission-row-${item}`).join(" ");
+  return `
+    <div class="rescission-row ${escapeAttr(toneClasses)}" role="row">
+      <span role="cell">${escapeHtml(label)}</span>
+      <strong role="cell">${escapeHtml(amount)}</strong>
+    </div>`;
+}
+
+function applyTerminationCalculatorToFinancialFields() {
+  const contract = state.pendingTermination.length === 1 ? state.pendingTermination[0] : null;
+  if (!contract) {
+    toast("Selecione um contrato antes de aplicar a calculadora.");
+    return;
+  }
+  const scenario = readRescissionScenario("termination");
+  if (scenario.contractValue <= 0 && scenario.paidValue <= 0) {
+    toast("Informe os valores da calculadora antes de aplicar.");
+    return;
+  }
+  document.getElementById("hasRetention").checked = scenario.totalDeductions > 0;
+  document.getElementById("retainedValue").value = scenario.totalDeductions > 0
+    ? formatMoneyForInput(scenario.totalDeductions)
+    : "";
+  document.getElementById("retentionTotal").checked = false;
+  document.getElementById("hasRefund").checked = scenario.netResult > 0;
+  document.getElementById("refundValue").value = scenario.netResult > 0
+    ? formatMoneyForInput(scenario.netResult)
+    : "";
+  syncTerminationFinancialFields();
+  toast("Valores da calculadora aplicados à confirmação do distrato.");
+}
+
+function openTerminationSimulation() {
+  state.simulationContract = null;
+  clearSimulationScenario({ keepDialogOpen: true });
+  document.getElementById("simulationDialog").showModal();
+  setTimeout(() => document.getElementById("simulationContractSearch").focus(), 0);
+}
+
+function closeSimulationDialog() {
+  document.getElementById("simulationDialog").close();
+  document.getElementById("simulationContractResults").hidden = true;
+}
+
+function clearSimulationScenario(options = {}) {
+  state.simulationContract = null;
+  [
+    "simulationContractSearch",
+    "simulationClientName",
+    "simulationContractCode",
+    "simulationLocalizer",
+    "simulationContractValue",
+    "simulationPaidValue",
+    "simulationGiftValue",
+  ].forEach((id) => {
+    document.getElementById(id).value = "";
+  });
+  document.getElementById("simulationContractSummary").hidden = true;
+  document.getElementById("simulationContractResults").hidden = true;
+  document.getElementById("simulationError").hidden = true;
+  renderSimulationCalculator();
+  if (!options.keepDialogOpen) document.getElementById("simulationContractSearch").focus();
+}
+
+function renderSimulationContractResults() {
+  const host = document.getElementById("simulationContractResults");
+  const query = normalizeSearchValue(document.getElementById("simulationContractSearch").value);
+  const matches = getContractSearchMatches(query, 8);
+  host.innerHTML = matches.map((contract, index) => contractSearchResultButton(contract, index, "simulation-contract-result")).join("")
+    || '<p class="contract-search-empty">Nenhum contrato encontrado. Você pode preencher manualmente.</p>';
+  host.hidden = false;
+}
+
+function handleSimulationContractResultClick(event) {
+  const button = event.target.closest("[data-simulation-contract-result]");
+  if (!button) return;
+  selectSimulationContract(button.dataset.simulationContractResult);
+}
+
+function handleSimulationContractSearchKeydown(event) {
+  const host = document.getElementById("simulationContractResults");
+  if (event.key === "Escape") {
+    host.hidden = true;
+    return;
+  }
+  if (event.key !== "Enter") return;
+  const firstResult = host.querySelector("[data-simulation-contract-result]");
+  if (!firstResult) return;
+  event.preventDefault();
+  selectSimulationContract(firstResult.dataset.simulationContractResult);
+}
+
+function selectSimulationContract(contractId) {
+  const contract = state.contracts.find((item) => item.contractId === contractId);
+  if (!contract) return;
+  state.simulationContract = contract;
+  document.getElementById("simulationContractSearch").value = `${contract.primaryClient || "Cliente não informado"} · ${contractDisplayCode(contract)}`;
+  document.getElementById("simulationClientName").value = contract.primaryClient || "";
+  document.getElementById("simulationContractCode").value = contractDisplayCode(contract);
+  document.getElementById("simulationLocalizer").value = contractLocalizer(contract);
+  fillRescissionInputs("simulation", contract);
+  const summary = document.getElementById("simulationContractSummary");
+  const appreciation = contractAppreciation(contract);
+  summary.hidden = false;
+  summary.innerHTML = `
+    <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
+    <span>Contrato ${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</span>
+    <small>Valor financiado: ${escapeHtml(formatOptionalCurrency(appreciation.financed))} · Atualizado: ${formatCurrency(appreciation.updated)} · Saldo a receber: ${formatCurrency(contract.remainingBalance)}</small>
+  `;
+  document.getElementById("simulationContractResults").hidden = true;
+  renderSimulationCalculator();
+}
+
+function getContractSearchMatches(query, limit = 8) {
+  return state.contracts
+    .filter((contract) => !query || normalizeSearchValue([
+      contract.primaryClient,
+      contract.contractCode,
+      contract.localizer,
+      contract.contractId,
+      contract.sourceNumber,
+      contract.primaryDocument,
+      contract.primaryPhone,
+      contract.product,
+    ].join(" ")).includes(query))
+    .sort((a, b) => {
+      if (query) {
+        const aStarts = normalizeSearchValue(`${a.primaryClient} ${contractDisplayCode(a)} ${contractLocalizer(a)}`).startsWith(query) ? 1 : 0;
+        const bStarts = normalizeSearchValue(`${b.primaryClient} ${contractDisplayCode(b)} ${contractLocalizer(b)}`).startsWith(query) ? 1 : 0;
+        if (aStarts !== bStarts) return bStarts - aStarts;
+      }
+      return toNumber(b.overdueValue) - toNumber(a.overdueValue);
+    })
+    .slice(0, limit);
+}
+
+function contractSearchResultButton(contract, index, dataName) {
+  return `
+    <button type="button" role="option" data-${escapeAttr(dataName)}="${escapeAttr(contract.contractId)}" aria-selected="false">
+      <span>
+        <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
+        <small>${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</small>
+      </span>
+      <span>
+        <strong>${formatCurrency(contract.effectivePaidValue)}</strong>
+        <small>${contract.daysOverdue} dias</small>
+      </span>
+      ${index === 0 ? '<span class="sr-only">Primeiro resultado</span>' : ""}
+    </button>
+  `;
+}
+
+function printRescissionScenarioReport() {
+  const scenario = readRescissionScenario("simulation");
+  if (scenario.contractValue <= 0 && scenario.paidValue <= 0) {
+    document.getElementById("simulationError").hidden = false;
+    document.getElementById("simulationContractValue").focus();
+    return;
+  }
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    toast("O navegador bloqueou a abertura do relatório. Libere pop-ups para este site.");
+    return;
+  }
+  reportWindow.opener = null;
+  const logoUrl = new URL("assets/shortcut-logo.png", window.location.href).href;
+  const clientName = document.getElementById("simulationClientName").value.trim() || "Cliente não informado";
+  const contractCode = document.getElementById("simulationContractCode").value.trim() || "-";
+  const localizer = document.getElementById("simulationLocalizer").value.trim() || "-";
+  reportWindow.document.write(`<!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="utf-8">
+        <title>Cenário da Rescisão</title>
+        <style>${rescissionScenarioReportStyles()}</style>
+      </head>
+      <body>
+        <header>
+          <img src="${escapeAttr(logoUrl)}" alt="Villamor">
+          <div>
+            <span>VILLAMOR · PÓS-VENDA VIP</span>
+            <h1>Cenário da Rescisão</h1>
+            <p>Emitido em ${escapeHtml(formatDate(new Date().toISOString()))}</p>
+          </div>
+        </header>
+        <section class="client-summary">
+          <article><span>Cliente</span><strong>${escapeHtml(clientName)}</strong></article>
+          <article><span>Contrato</span><strong>${escapeHtml(contractCode)}</strong></article>
+          <article><span>Localizador</span><strong>${escapeHtml(localizer)}</strong></article>
+        </section>
+        <section class="scenario-layout">
+          <div class="scenario-table">
+            ${rescissionReportRow("Valor financiado do contrato", scenario.contractValue, "neutral")}
+            ${rescissionReportRow("Integralizado pelo cliente", scenario.paidValue, "positive")}
+            ${rescissionReportRow("Corretagem contratual (6%)", -scenario.brokerageValue, "negative")}
+            ${rescissionReportRow("Multa rescisória (50%)", -scenario.penaltyValue, "negative")}
+            ${rescissionReportRow("Brindes e benefícios", -scenario.giftValue, "negative")}
+            ${rescissionReportRow("Total de retenções", -scenario.totalDeductions, "negative")}
+          </div>
+          <aside class="scenario-outcome scenario-outcome-${escapeAttr(scenario.outcomeTone)}">
+            <span>${escapeHtml(scenario.outcomeLabel)}</span>
+            <strong>${escapeHtml(formatCurrency(scenario.outcomeValue))}</strong>
+            <small>Resultado estimado pela diferença entre o integralizado e as retenções simuladas.</small>
+          </aside>
+        </section>
+        <section class="notice">
+          Esta simulação não é um documento oficial de distrato. Os valores dependem de conferência contratual, validação financeira e aprovação administrativa.
+        </section>
+        <footer>Documento gerado pelo PÓS-VENDA VIP · Cenário meramente informativo.</footer>
+        <script>window.addEventListener("load", () => setTimeout(() => window.print(), 250));<\/script>
+      </body>
+    </html>`);
+  reportWindow.document.close();
+}
+
+function rescissionReportRow(label, value, tone) {
+  const amount = tone === "negative" && value !== 0 ? `-${formatCurrency(Math.abs(value))}` : formatCurrency(value);
+  return `<div class="scenario-row scenario-row-${escapeAttr(tone)}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(amount)}</strong></div>`;
+}
+
+function rescissionScenarioReportStyles() {
+  return `
+    @page{size:A4 portrait;margin:13mm}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{margin:0;color:#29191e;font:12px Arial,sans-serif;background:#fff}
+    header{display:flex;align-items:center;gap:14px;padding-bottom:14px;border-bottom:3px solid #a62552}
+    header img{width:62px;height:62px;border-radius:8px;object-fit:cover}
+    header span{font-size:10px;font-weight:800;color:#a62552}h1{margin:4px 0;font-size:25px}
+    header p{margin:0;color:#6f6267}.client-summary{display:grid;grid-template-columns:1.4fr .8fr .8fr;gap:8px;margin:16px 0}
+    .client-summary article{padding:11px;border:1px solid #ded3d7;border-radius:7px;background:#fff8fa}
+    .client-summary span{display:block;color:#8f2349;font-size:9px;font-weight:800;text-transform:uppercase}
+    .client-summary strong{display:block;margin-top:5px;font-size:14px}.scenario-layout{display:grid;grid-template-columns:1fr 220px;gap:14px;align-items:stretch}
+    .scenario-table{overflow:hidden;border:1px solid #c86f42;border-radius:7px}.scenario-row{display:grid;grid-template-columns:1fr 170px;min-height:34px;border-bottom:1px solid rgba(120,54,25,.28)}
+    .scenario-row:last-child{border-bottom:0}.scenario-row span,.scenario-row strong{display:flex;align-items:center;padding:8px 10px}
+    .scenario-row span{justify-content:flex-start;font-weight:700;text-transform:uppercase}.scenario-row strong{justify-content:flex-end;border-left:1px solid rgba(120,54,25,.22)}
+    .scenario-row-neutral{background:#ffb078}.scenario-row-positive{background:#ffc097}.scenario-row-negative{background:#ff8f92;color:#a90620}.scenario-row-negative strong{color:#c6001e}
+    .scenario-outcome{display:flex;flex-direction:column;justify-content:center;padding:18px;border-radius:8px;color:#fff}
+    .scenario-outcome span{font-size:10px;font-weight:800;text-transform:uppercase}.scenario-outcome strong{display:block;margin:10px 0;font-size:25px}
+    .scenario-outcome small{line-height:1.45}.scenario-outcome-refund{background:linear-gradient(135deg,#087a49,#19a66a)}.scenario-outcome-debt{background:linear-gradient(135deg,#98244c,#d43d57)}
+    .notice{margin-top:16px;padding:12px 14px;border:1px solid #e6d5bc;border-radius:7px;background:#fffaf0;color:#5f4d2a;line-height:1.45}
+    footer{margin-top:18px;padding-top:8px;border-top:1px solid #ddd;color:#776a6f;font-size:9px;text-align:center}`;
 }
 
 function localDateInputValue(date = new Date()) {
@@ -2465,12 +2913,14 @@ function financialHealthFields(contract, problemFields = []) {
     ["financialStatus", "Status financeiro", contract.financialStatus || contract.appStatus || "-"],
     ["effectivePaidPercent", "Integralização", percent === null ? "Não informada" : formatPercent(percent / 100)],
     ["paidPercent", "Percentual da origem", legacyPercent === null ? "Não informado" : formatPercent(legacyPercent / 100)],
+    ["financedValue", "Valor financiado", formatOptionalCurrency(contractFinancedValue(contract), "-")],
     ["totalUpdatedValue", "Carteira total", formatCurrency(contract.totalUpdatedValue)],
     ["effectivePaidValue", "Integralizado", formatCurrency(contract.effectivePaidValue)],
     ["remainingBalance", "Saldo a receber", formatCurrency(contract.remainingBalance)],
     ["overdueValue", "Valor em atraso", formatCurrency(contract.overdueValue)],
     ["nextDueDate", "Próximo vencimento", formatDate(contract.nextDueDate)],
     ["sourceFinancialAdjustments", "Ajuste original", [
+      adjustments.financedValue < 0 ? `Financiado ${formatCurrency(adjustments.financedValue)}` : "",
       adjustments.totalUpdatedValue < 0 ? `Total ${formatCurrency(adjustments.totalUpdatedValue)}` : "",
       adjustments.overdueValue < 0 ? `Atraso ${formatCurrency(adjustments.overdueValue)}` : "",
     ].filter(Boolean).join(" · ") || "-"],
@@ -2702,6 +3152,7 @@ function applyDashboardDrilldown(filterId, value) {
 
 function showContractHoverCard(contract, trigger) {
   const card = document.getElementById("contractHoverCard");
+  const appreciation = contractAppreciation(contract);
   card.innerHTML = `
     <div class="hover-card-header">
       <div>
@@ -2715,7 +3166,9 @@ function showContractHoverCard(contract, trigger) {
       ${hoverDetail("Produto", contract.product || "-")}
       ${hoverDetail("Localizador", contractLocalizer(contract))}
       ${hoverDetail("Estado", contract.clientState || "Não informado")}
-      ${hoverDetail("Valor do contrato", formatCurrency(contract.totalUpdatedValue))}
+      ${hoverDetail("Valor financiado", formatOptionalCurrency(appreciation.financed))}
+      ${hoverDetail("Valor atualizado", formatCurrency(appreciation.updated))}
+      ${hoverDetail("Variação do empreendimento", appreciation.financed > 0 ? `${formatCurrency(appreciation.amount)} · ${formatPercent(appreciation.rate)}` : "Não informado")}
       ${hoverDetail("Valor em atraso", formatCurrency(contract.overdueValue))}
       ${hoverDetail("Próximo vencimento", formatDate(contract.nextDueDate))}
       ${hoverDetail("Aging", `${contract.daysOverdue} dias`)}
