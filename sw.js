@@ -1,11 +1,11 @@
-const CACHE_NAME = "pos-venda-vip-v35";
+const CACHE_NAME = "pos-venda-vip-v36";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./offline.html",
   "./manifest.webmanifest",
-  "./css/style.css?v=20260626-2",
-  "./js/app.js?v=20260626-2",
+  "./css/style.css?v=20260626-3",
+  "./js/app.js?v=20260626-3",
   "./js/config.js",
   "./js/data-provider.js?v=20260621-1",
   "./js/database.js?v=20260621-1",

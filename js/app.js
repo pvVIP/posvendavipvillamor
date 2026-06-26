@@ -25,7 +25,7 @@ import {
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.06.26.2";
+const APP_VERSION = "2026.06.26.3";
 const state = {
   contracts: [],
   terminated: [],
@@ -39,6 +39,8 @@ const state = {
   pageSize: 25,
   sortKey: "overdueValue",
   sortDirection: "desc",
+  terminationSortKey: "terminatedAt",
+  terminationSortDirection: "desc",
   currentUser: "Operador Local",
   currentUserId: null,
   currentRole: "operator",
@@ -356,6 +358,9 @@ function bindEvents() {
   document.querySelectorAll("th[data-sort]").forEach((header) => {
     header.addEventListener("click", () => sortBy(header.dataset.sort));
   });
+  document.querySelectorAll("th[data-termination-sort]").forEach((header) => {
+    header.addEventListener("click", () => sortTerminationsBy(header.dataset.terminationSort));
+  });
   document.getElementById("selectAllRows").addEventListener("change", toggleSelectPage);
   document.getElementById("bulkTerminateButton").addEventListener("click", requestBulkTermination);
   document.getElementById("clearSelectionButton").addEventListener("click", clearSelection);
@@ -434,10 +439,15 @@ function bindEvents() {
   document.getElementById("formalTerminationReportButton").addEventListener("click", () => printTerminationReport("formal"));
   document.getElementById("clearTerminationFiltersButton").addEventListener("click", clearTerminationFilters);
   ["terminationSearch", "terminationReasonFilter", "terminationApproachFilter", "terminationOriginFilter", "terminationStartDate", "terminationEndDate"]
-    .forEach((id) => document.getElementById(id).addEventListener("input", () => {
-      renderTerminatedTable();
-      updateFilterDock();
-    }));
+    .forEach((id) => {
+      const element = document.getElementById(id);
+      const handler = () => {
+        renderTerminatedTable();
+        updateFilterDock();
+      };
+      element.addEventListener("input", handler);
+      element.addEventListener("change", handler);
+    });
   document.getElementById("changeUserButton").addEventListener("click", changeUser);
   document.getElementById("editProfileButton").addEventListener("click", openProfileDialog);
   document.getElementById("profileForm").addEventListener("submit", saveProfile);
@@ -735,7 +745,7 @@ const TOPBAR_CONTENT = {
   },
   terminations: {
     eyebrow: "Controle auditado",
-    title: "Central de distratos",
+    title: "Central de Distratos",
     description: "Registre encerramentos, retenções e reembolsos com rastreabilidade.",
   },
   reversions: {
@@ -745,7 +755,7 @@ const TOPBAR_CONTENT = {
   },
   health: {
     eyebrow: "Governança da informação",
-    title: "Alertas de dados",
+    title: "Alertas de Dados",
     description: "Identifique inconsistências antes que elas afetem indicadores e decisões.",
   },
   executive: {
@@ -930,8 +940,11 @@ function terminationFilterDescriptors() {
   const descriptors = [];
   const search = document.getElementById("terminationSearch").value.trim();
   if (search) descriptors.push({ id: "terminationSearch", label: `Busca: ${search}` });
+  const reasons = selectedMultiValues("terminationReasonFilter");
+  if (reasons.length) {
+    descriptors.push({ id: "terminationReasonFilter", label: `Motivos: ${reasons.join(", ")}` });
+  }
   [
-    ["terminationReasonFilter", "Motivo"],
     ["terminationApproachFilter", "Abordagem"],
     ["terminationOriginFilter", "Origem"],
   ].forEach(([id, label]) => {
@@ -948,7 +961,8 @@ function terminationFilterDescriptors() {
 function clearSingleFilter(id) {
   const element = document.getElementById(id);
   if (!element) return;
-  element.value = element.tagName === "SELECT" ? "all" : "";
+  if (element.multiple) [...element.options].forEach((option) => { option.selected = false; });
+  else element.value = element.tagName === "SELECT" ? "all" : "";
   state.page = 1;
   if (id.startsWith("termination")) {
     renderTerminatedTable();
@@ -969,7 +983,7 @@ function activePortfolioFilterCount() {
 function activeTerminationFilterCount() {
   return [
     document.getElementById("terminationSearch").value.trim(),
-    document.getElementById("terminationReasonFilter").value === "all" ? "" : document.getElementById("terminationReasonFilter").value,
+    selectedMultiValues("terminationReasonFilter").length ? "motivos" : "",
     document.getElementById("terminationApproachFilter").value === "all" ? "" : document.getElementById("terminationApproachFilter").value,
     document.getElementById("terminationOriginFilter").value === "all" ? "" : document.getElementById("terminationOriginFilter").value,
     document.getElementById("terminationStartDate").value,
@@ -1037,6 +1051,16 @@ function sortBy(key) {
     state.sortDirection = "asc";
   }
   renderAll();
+}
+
+function sortTerminationsBy(key) {
+  if (state.terminationSortKey === key) {
+    state.terminationSortDirection = state.terminationSortDirection === "asc" ? "desc" : "asc";
+  } else {
+    state.terminationSortKey = key;
+    state.terminationSortDirection = key === "terminatedAt" ? "desc" : "asc";
+  }
+  renderTerminatedTable();
 }
 
 function renderOperationalKpis() {
@@ -2474,18 +2498,17 @@ function renderTerminatedTable() {
 
 function populateTerminationReasonFilter() {
   const select = document.getElementById("terminationReasonFilter");
-  const current = select.value || "all";
+  const current = new Set(selectedMultiValues(select));
   const reasons = byUnique(getUnifiedTerminations().map((item) => item.terminationReason).filter(Boolean));
-  select.innerHTML = [
-    '<option value="all">Todos</option>',
-    ...reasons.map((reason) => `<option value="${escapeAttr(reason)}">${escapeHtml(reason)}</option>`),
-  ].join("");
-  select.value = [...select.options].some((option) => option.value === current) ? current : "all";
+  select.innerHTML = reasons.map((reason) => `<option value="${escapeAttr(reason)}">${escapeHtml(reason)}</option>`).join("");
+  [...select.options].forEach((option) => {
+    option.selected = current.has(option.value);
+  });
 }
 
 function getFilteredTerminations() {
   const query = document.getElementById("terminationSearch").value.trim().toLowerCase();
-  const reason = document.getElementById("terminationReasonFilter").value;
+  const reasons = selectedMultiValues("terminationReasonFilter");
   const approach = document.getElementById("terminationApproachFilter").value;
   const origin = document.getElementById("terminationOriginFilter").value;
   const start = document.getElementById("terminationStartDate").value;
@@ -2495,14 +2518,40 @@ function getFilteredTerminations() {
       const haystack = `${contract.primaryClient || ""} ${contractDisplayCode(contract)} ${contractLocalizer(contract)}`.toLowerCase();
       const date = String(contract.terminatedAt || "").slice(0, 10);
       if (query && !haystack.includes(query)) return false;
-      if (reason !== "all" && contract.terminationReason !== reason) return false;
+      if (reasons.length && !reasons.includes(contract.terminationReason || "")) return false;
       if (approach !== "all" && (contract.terminationApproach || "nao_informada") !== approach) return false;
       if (origin !== "all" && contract.reconciliationStatus !== origin) return false;
       if (start && date < start) return false;
       if (end && date > end) return false;
       return true;
     })
-    .sort((a, b) => String(b.terminatedAt || "").localeCompare(String(a.terminatedAt || "")));
+    .sort(compareTerminationRows);
+}
+
+function selectedMultiValues(idOrElement) {
+  const select = typeof idOrElement === "string" ? document.getElementById(idOrElement) : idOrElement;
+  if (!select) return [];
+  return [...select.selectedOptions].map((option) => option.value).filter(Boolean);
+}
+
+function compareTerminationRows(a, b) {
+  const key = state.terminationSortKey;
+  const direction = state.terminationSortDirection;
+  const multiplier = direction === "asc" ? 1 : -1;
+  const av = terminationSortValue(a, key);
+  const bv = terminationSortValue(b, key);
+  if (typeof av === "number" || typeof bv === "number") return (toNumber(av) - toNumber(bv)) * multiplier;
+  return String(av || "").localeCompare(String(bv || ""), "pt-BR") * multiplier;
+}
+
+function terminationSortValue(contract, key) {
+  if (key === "contractCode") return contractDisplayCode(contract);
+  if (key === "terminatedAt") return String(contract.terminatedAt || "");
+  if (key === "terminationApproach") return approachLabel(contract.terminationApproach);
+  if (key === "retainedValue") return contract.hasRetention ? toNumber(contract.retainedValue) : 0;
+  if (key === "refundValue") return contract.hasRefund ? toNumber(contract.refundValue) : 0;
+  if (key === "reconciliationStatus") return reconciliationLabel(contract.reconciliationStatus);
+  return contract[key] ?? "";
 }
 
 function calculateTerminationTotals(contracts) {
@@ -2577,7 +2626,9 @@ function clearTerminationFilters() {
   ["terminationSearch", "terminationStartDate", "terminationEndDate"].forEach((id) => {
     document.getElementById(id).value = "";
   });
-  document.getElementById("terminationReasonFilter").value = "all";
+  [...document.getElementById("terminationReasonFilter").options].forEach((option) => {
+    option.selected = false;
+  });
   document.getElementById("terminationApproachFilter").value = "all";
   document.getElementById("terminationOriginFilter").value = "all";
   renderTerminatedTable();
@@ -3866,14 +3917,14 @@ function reportBars(entries, total) {
 function terminationFilterSummary() {
   const start = document.getElementById("terminationStartDate").value;
   const end = document.getElementById("terminationEndDate").value;
-  const reason = selectedOptionLabel("terminationReasonFilter", "all");
+  const reasons = selectedMultiValues("terminationReasonFilter");
   const approach = selectedOptionLabel("terminationApproachFilter", "all");
   const search = document.getElementById("terminationSearch").value.trim();
   const filters = [];
   if (start && end) filters.push(`Período: ${formatDate(start)} a ${formatDate(end)}`);
   else if (start) filters.push(`Período: a partir de ${formatDate(start)}`);
   else if (end) filters.push(`Período: até ${formatDate(end)}`);
-  if (reason) filters.push(`Motivo: ${reason}`);
+  if (reasons.length) filters.push(`Motivos: ${reasons.join(", ")}`);
   if (approach) filters.push(`Abordagem: ${approach}`);
   if (search) filters.push(`Busca: ${search}`);
   return filters.length ? filters.join(" · ") : "Sem filtros adicionais";

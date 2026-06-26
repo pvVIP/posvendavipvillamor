@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260626-2">
+  <link rel="stylesheet" href="css/style.css?v=20260626-3">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260626-2" type="module"></script>
+  <script src="js/app.js?v=20260626-3" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -274,8 +274,7 @@
             </label>
             <label>
               Motivo
-              <select id="terminationReasonFilter">
-                <option value="all">Todos</option>
+              <select id="terminationReasonFilter" multiple size="4" aria-label="Filtrar por um ou mais motivos">
               </select>
             </label>
             <label>
@@ -313,23 +312,22 @@
         <div class="table-shell compact-table">
           <div class="table-toolbar">
             <strong id="terminatedSummary" aria-live="polite">0 registros</strong>
-            <span>Recuperado = valor efetivamente retido</span>
           </div>
           <div class="table-scroll" tabindex="0" aria-label="Distratos lançados">
             <table class="data-table">
               <caption class="sr-only">Todos os distratos conciliados</caption>
               <thead>
                 <tr>
-                  <th scope="col">Contrato</th>
-                  <th scope="col">Cliente</th>
-                  <th scope="col">Integralizado</th>
-                  <th scope="col">Data do distrato</th>
-                  <th scope="col">Motivo</th>
-                  <th scope="col">Abordagem</th>
-                  <th scope="col">Valor retido</th>
-                  <th scope="col">Reembolso</th>
-                  <th scope="col">Responsável</th>
-                  <th scope="col">Origem</th>
+                  <th scope="col" data-termination-sort="contractCode"><button class="sort-button" type="button">Contrato</button></th>
+                  <th scope="col" data-termination-sort="primaryClient"><button class="sort-button" type="button">Cliente</button></th>
+                  <th scope="col" data-termination-sort="effectivePaidValue"><button class="sort-button" type="button">Integralizado</button></th>
+                  <th scope="col" data-termination-sort="terminatedAt"><button class="sort-button" type="button">Data do distrato</button></th>
+                  <th scope="col" data-termination-sort="terminationReason"><button class="sort-button" type="button">Motivo</button></th>
+                  <th scope="col" data-termination-sort="terminationApproach"><button class="sort-button" type="button">Abordagem</button></th>
+                  <th scope="col" data-termination-sort="retainedValue"><button class="sort-button" type="button">Valor retido</button></th>
+                  <th scope="col" data-termination-sort="refundValue"><button class="sort-button" type="button">Reembolso</button></th>
+                  <th scope="col" data-termination-sort="terminatedBy"><button class="sort-button" type="button">Responsável</button></th>
+                  <th scope="col" data-termination-sort="reconciliationStatus"><button class="sort-button" type="button">Origem</button></th>
                   <th scope="col">Ação</th>
                 </tr>
               </thead>

@@ -2698,8 +2698,23 @@ body.filter-dock-active .toast-host {
 }
 
 #terminationsPanel .data-table th {
+  text-align: center;
   line-height: 1.2;
   white-space: normal;
+}
+
+#terminationsPanel .data-table th .sort-button {
+  justify-content: center;
+  width: 100%;
+}
+
+#terminationReasonFilter[multiple] {
+  min-height: 118px;
+  padding-block: 8px;
+}
+
+#terminationReasonFilter[multiple] option {
+  padding: 4px 6px;
 }
 
 #terminationsPanel .data-table th:nth-child(1),
