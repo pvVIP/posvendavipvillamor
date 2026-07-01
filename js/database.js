@@ -1,4 +1,4 @@
-import { IndexedDbStorage } from "./storage.js?v=20260609-5";
+import { IndexedDbStorage } from "./storage.js?v=20260701-1";
 import { STATUS, createId, enrichContract, todayIso } from "./utils.js";
 
 export class Database {
@@ -121,6 +121,30 @@ export class Database {
 
   async getSourceExceptions() {
     return (await this.storage.getAll("sourceExceptions")).map(enrichContract);
+  }
+
+  async getTreatmentReviews() {
+    return this.storage.getAll("treatmentReviews");
+  }
+
+  async saveTreatmentReview(review) {
+    const saved = {
+      ...review,
+      reviewedAt: todayIso(),
+      reviewedBy: review.reviewedBy || "Administrador Local",
+    };
+    await this.storage.put("treatmentReviews", saved);
+    await this.addAuditLog({
+      action: "treatment-review",
+      entityType: "treatment-case",
+      entityId: saved.caseId,
+      contractId: saved.contractId,
+      ruleId: saved.ruleId,
+      decision: saved.decision,
+      sourceFingerprint: saved.sourceFingerprint,
+      note: saved.note || "",
+    });
+    return saved;
   }
 
   async setTerminatedContracts(contracts) {

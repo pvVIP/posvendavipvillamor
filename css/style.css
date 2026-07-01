@@ -2742,6 +2742,564 @@ body.filter-dock-active .toast-host {
   position: static;
 }
 
+/* Central administrativa de tratamento: resultados isolados da carteira oficial. */
+.treatment-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.treatment-panel:not(.active) {
+  display: none;
+}
+
+.treatment-safety-banner,
+.treatment-impact-panel,
+.treatment-workspace {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.treatment-safety-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 112px;
+  padding: 22px 24px;
+  border-left: 4px solid #1976a8;
+}
+
+.treatment-safety-banner h2,
+.treatment-toolbar-heading h3,
+.treatment-impact-heading h3 {
+  margin: 3px 0 5px;
+}
+
+.treatment-safety-banner p:last-child,
+.treatment-impact-heading p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.treatment-isolation-badge {
+  flex: 0 0 auto;
+  max-width: 280px;
+  padding: 10px 12px;
+  border: 1px solid rgba(25, 118, 168, 0.3);
+  border-radius: 999px;
+  background: rgba(25, 118, 168, 0.08);
+  color: #145d82;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.treatment-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.treatment-metrics .metric-card {
+  min-height: 116px;
+}
+
+.treatment-impact-panel {
+  padding: 20px;
+}
+
+.treatment-impact-heading,
+.treatment-toolbar-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.treatment-impact-heading > p {
+  max-width: 560px;
+  text-align: right;
+}
+
+.treatment-impact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.treatment-impact-column {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-top: 3px solid #74808b;
+  background: var(--surface-soft);
+}
+
+.treatment-impact-column > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.treatment-impact-column small {
+  color: var(--muted);
+}
+
+.treatment-impact-validated {
+  border-top-color: var(--green);
+}
+
+.treatment-impact-potential {
+  border-top-color: #1976a8;
+}
+
+.treatment-impact-column dl {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.treatment-impact-column dl div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.treatment-impact-column dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.treatment-impact-column dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.treatment-workspace {
+  overflow: hidden;
+}
+
+.treatment-toolbar {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.treatment-toolbar-heading > strong {
+  color: var(--brand);
+}
+
+.treatment-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(155px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.treatment-filters label,
+.treatment-note-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.treatment-filters input,
+.treatment-filters select,
+.treatment-note-field textarea {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  color: var(--ink);
+}
+
+.treatment-filters input,
+.treatment-filters select {
+  padding: 0 11px;
+}
+
+.treatment-case-list {
+  display: grid;
+}
+
+.treatment-case {
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.treatment-case:last-child {
+  border-bottom: 0;
+}
+
+.treatment-case > summary {
+  display: grid;
+  grid-template-columns: 5px minmax(210px, 0.9fr) minmax(300px, 1.6fr) 124px 122px;
+  gap: 14px;
+  align-items: center;
+  min-height: 82px;
+  padding: 14px 20px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.treatment-case > summary::-webkit-details-marker {
+  display: none;
+}
+
+.treatment-case > summary:hover {
+  background: rgba(157, 42, 79, 0.035);
+}
+
+.treatment-case[open] > summary {
+  background: rgba(157, 42, 79, 0.055);
+}
+
+.treatment-case-severity {
+  align-self: stretch;
+  border-radius: 5px;
+  background: var(--amber);
+}
+
+.treatment-case-critical .treatment-case-severity {
+  background: var(--red);
+}
+
+.treatment-case-contract,
+.treatment-case-rule {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.treatment-case-contract strong,
+.treatment-case-rule strong,
+.treatment-case-contract small,
+.treatment-case-rule small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.treatment-case-contract strong {
+  color: var(--ink);
+}
+
+.treatment-case-contract small,
+.treatment-case-rule small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.treatment-case-rule strong {
+  font-size: 13px;
+}
+
+.treatment-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.treatment-confidence-high {
+  border-color: rgba(7, 148, 85, 0.35);
+  background: rgba(7, 148, 85, 0.1);
+  color: #087544;
+}
+
+.treatment-confidence-medium {
+  border-color: rgba(201, 130, 20, 0.4);
+  background: rgba(201, 130, 20, 0.1);
+  color: #8b590a;
+}
+
+.treatment-confidence-low,
+.treatment-decision-directorate {
+  border-color: rgba(50, 104, 184, 0.35);
+  background: rgba(50, 104, 184, 0.1);
+  color: #28568f;
+}
+
+.treatment-decision-treated {
+  border-color: rgba(7, 148, 85, 0.35);
+  background: rgba(7, 148, 85, 0.1);
+  color: #087544;
+}
+
+.treatment-decision-pending {
+  border-color: rgba(194, 47, 66, 0.28);
+  background: rgba(194, 47, 66, 0.08);
+  color: var(--red);
+}
+
+.treatment-decision-kept {
+  color: var(--muted);
+}
+
+.treatment-case-body {
+  display: grid;
+  gap: 16px;
+  padding: 0 20px 20px 39px;
+}
+
+.treatment-case-analysis {
+  display: grid;
+  grid-template-columns: 1.15fr 0.9fr 1.2fr;
+  gap: 10px;
+}
+
+.treatment-case-analysis section {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+}
+
+.treatment-case-analysis p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.treatment-case-analysis ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.treatment-proposal {
+  border-color: rgba(25, 118, 168, 0.28) !important;
+  background: rgba(25, 118, 168, 0.06) !important;
+}
+
+.treatment-proposal-impact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.treatment-proposal-impact span {
+  padding: 6px 8px;
+  border: 1px solid rgba(25, 118, 168, 0.22);
+  border-radius: 5px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.treatment-proposal-impact strong {
+  margin-left: 4px;
+  color: var(--ink);
+}
+
+.treatment-note-field textarea {
+  min-height: 70px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.treatment-case-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.treatment-case-footer > small {
+  color: var(--muted);
+}
+
+.treatment-case-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.treatment-case-actions button {
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+
+.treatment-stale-warning,
+.treatment-system-warning {
+  display: flex;
+  gap: 10px;
+  padding: 11px 13px;
+  border: 1px solid rgba(194, 47, 66, 0.35);
+  background: rgba(194, 47, 66, 0.08);
+  color: var(--red);
+}
+
+.treatment-stale-warning {
+  align-items: baseline;
+}
+
+.treatment-system-warning {
+  margin: 14px;
+  flex-direction: column;
+}
+
+.treatment-empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+[data-theme="dark"] .treatment-safety-banner,
+[data-theme="dark"] .treatment-impact-panel,
+[data-theme="dark"] .treatment-workspace,
+[data-theme="dark"] .treatment-case,
+[data-theme="dark"] .treatment-impact-column,
+[data-theme="dark"] .treatment-case-analysis section {
+  background: #24272b;
+}
+
+[data-theme="dark"] .treatment-isolation-badge,
+[data-theme="dark"] .treatment-proposal {
+  color: #9fd9f5;
+}
+
+[data-theme="dark"] .treatment-confidence-high,
+[data-theme="dark"] .treatment-decision-treated {
+  color: #65e5a5;
+}
+
+[data-theme="dark"] .treatment-confidence-medium {
+  color: #ffd36d;
+}
+
+[data-theme="dark"] .treatment-confidence-low,
+[data-theme="dark"] .treatment-decision-directorate {
+  color: #a9cbff;
+}
+
+@media (max-width: 1180px) {
+  .treatment-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .treatment-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .treatment-case > summary {
+    grid-template-columns: 5px minmax(180px, 0.8fr) minmax(260px, 1.4fr) 112px;
+  }
+
+  .treatment-case > summary .treatment-badge:last-child {
+    grid-column: 2 / -1;
+    justify-self: start;
+  }
+}
+
+@media (max-width: 780px) {
+  .treatment-safety-banner,
+  .treatment-impact-heading,
+  .treatment-toolbar-heading,
+  .treatment-case-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .treatment-isolation-badge {
+    max-width: none;
+  }
+
+  .treatment-impact-heading > p {
+    text-align: left;
+  }
+
+  .treatment-impact-grid,
+  .treatment-case-analysis {
+    grid-template-columns: 1fr;
+  }
+
+  .treatment-case > summary {
+    grid-template-columns: 5px minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .treatment-case-rule {
+    grid-column: 2 / -1;
+  }
+
+  .treatment-case > summary .treatment-badge:last-child {
+    grid-column: auto;
+    justify-self: stretch;
+  }
+
+  .treatment-case-body {
+    padding: 0 14px 16px 29px;
+  }
+
+  .treatment-case-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .treatment-case-actions button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  #treatmentKpis,
+  .treatment-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  #treatmentKpis .metric-card:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .treatment-filters label:first-child,
+  .treatment-filters button {
+    grid-column: 1 / -1;
+  }
+
+  .treatment-case > summary {
+    grid-template-columns: 4px minmax(0, 1fr);
+  }
+
+  .treatment-case > summary .treatment-badge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .treatment-case > summary .treatment-badge:last-child {
+    grid-column: 2;
+  }
+
+  .treatment-case-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 #terminateDialog,
 #simulationDialog {
   width: min(1180px, 80vw);
@@ -5139,6 +5697,16 @@ textarea:focus {
 }
 
 @media (min-width: 981px) {
+  .sidebar .nav-tabs {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-right: 3px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+    scrollbar-width: thin;
+  }
+
   body.navigation-collapsed .app-shell {
     grid-template-columns: 76px minmax(0, 1fr);
   }

@@ -1,6 +1,6 @@
-import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260621-1";
+import { createDataProvider, getDataProviderInfo } from "./data-provider.js?v=20260701-1";
 import { DistratoService } from "./distratos.js?v=20260621-1";
-import { parseWorkbookFile } from "./upload.js?v=20260625-1";
+import { parseWorkbookFile } from "./upload.js?v=20260701-1";
 import { renderCharts } from "./charts.js";
 import { generateInsights } from "./insights.js?v=20260609-7";
 import {
@@ -22,10 +22,15 @@ import {
   getHeatmapData,
   getTopDefaulted,
 } from "./dashboard.js?v=20260625-2";
+import {
+  buildTreatmentCases,
+  summarizeTreatmentCases,
+  TREATMENT_DECISIONS,
+} from "./treatment.js?v=20260701-1";
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.06.26.3";
+const APP_VERSION = "2026.07.01.1";
 const state = {
   contracts: [],
   terminated: [],
@@ -70,6 +75,9 @@ const state = {
   activeHealthAlert: null,
   healthAlertQuery: "",
   healthFilter: "all",
+  treatmentReviews: [],
+  treatmentCases: [],
+  treatmentLoadError: "",
   accessUsers: [],
   accessSummary: { pending: 0, active: 0, suspended: 0, rejected: 0 },
   accessUsersLoaded: false,
@@ -140,6 +148,7 @@ async function initializeApplication() {
   document.getElementById("changeUserButton").textContent = identity ? "Sair" : "Alterar";
   document.body.dataset.readonly = String(!state.canWrite);
   document.body.dataset.role = state.currentRole;
+  syncTreatmentAccess();
   document.getElementById("uploadInput").disabled = !state.canWrite;
   document.getElementById("bulkTerminateButton").disabled = !state.canWrite;
   applyTheme(settings.theme || "light");
@@ -306,6 +315,17 @@ function roleLabel(role) {
   }[role] || "Usuário";
 }
 
+function syncTreatmentAccess() {
+  const allowed = state.currentRole === "admin";
+  const tab = document.getElementById("treatmentTab");
+  const panel = document.getElementById("treatmentPanel");
+  tab.hidden = !allowed;
+  panel.hidden = !allowed;
+  if (!allowed && document.body.dataset.activeTab === "treatment") {
+    switchTab("operational");
+  }
+}
+
 function bindEvents() {
   document.querySelectorAll("[data-tab-target]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -456,6 +476,10 @@ function bindEvents() {
   document.getElementById("healthAlerts").addEventListener("click", handleHealthAlertClick);
   document.getElementById("healthKpis").addEventListener("click", handleHealthKpiFilter);
   document.addEventListener("click", handleHealthOutsideClick);
+  ["treatmentSearch", "treatmentRuleFilter", "treatmentDecisionFilter", "treatmentConfidenceFilter"]
+    .forEach((id) => document.getElementById(id).addEventListener("input", renderTreatment));
+  document.getElementById("clearTreatmentFiltersButton").addEventListener("click", clearTreatmentFilters);
+  document.getElementById("treatmentCaseList").addEventListener("click", handleTreatmentAction);
   document.getElementById("healthAlertSearch").addEventListener("input", (event) => {
     state.healthAlertQuery = event.target.value;
     renderHealthAlertRecords();
@@ -663,6 +687,15 @@ async function reload() {
   state.historicalTerminated = sourceTerminations.filter((contract) => !conflictIds.has(contract.contractId));
   state.reversions = (await db.getSourceReversions()).map(enrichContract);
   state.sourceExceptions = (await db.getSourceExceptions()).map(enrichContract);
+  state.treatmentReviews = [];
+  state.treatmentLoadError = "";
+  if (state.currentRole === "admin") {
+    try {
+      state.treatmentReviews = await db.getTreatmentReviews();
+    } catch (error) {
+      state.treatmentLoadError = error?.message || "Não foi possível carregar as decisões de tratamento.";
+    }
+  }
   populateFilterOptions();
   renderAll();
 }
@@ -675,6 +708,7 @@ function renderAll() {
   renderTerminatedTable();
   renderReversions();
   renderDataHealth();
+  renderTreatment();
   renderExecutive();
   updateFilterDock();
   renderActiveFilterChips();
@@ -710,6 +744,10 @@ function performanceMeterMarkup(percentage, current, total) {
 }
 
 function switchTab(target) {
+  if (target === "treatment" && state.currentRole !== "admin") {
+    toast("A Central de Tratamento é exclusiva para administradores.");
+    target = "operational";
+  }
   const previousTarget = document.body.dataset.activeTab || "operational";
   closeFilterPanel(false);
   document.querySelectorAll(".nav-tab").forEach((button) => button.classList.toggle("active", button.dataset.tabTarget === target));
@@ -717,6 +755,7 @@ function switchTab(target) {
   document.getElementById("terminationsPanel").classList.toggle("active", target === "terminations");
   document.getElementById("reversionsPanel").classList.toggle("active", target === "reversions");
   document.getElementById("healthPanel").classList.toggle("active", target === "health");
+  document.getElementById("treatmentPanel").classList.toggle("active", target === "treatment");
   document.getElementById("executivePanel").classList.toggle("active", target === "executive");
   document.getElementById("settingsPanel").classList.toggle("active", target === "settings");
   document.body.dataset.activeTab = target;
@@ -757,6 +796,11 @@ const TOPBAR_CONTENT = {
     eyebrow: "Governança da informação",
     title: "Alertas de Dados",
     description: "Identifique inconsistências antes que elas afetem indicadores e decisões.",
+  },
+  treatment: {
+    eyebrow: "Saneamento auditado",
+    title: "Central de Tratamento",
+    description: "Cruze evidências, valide correções e isole pendências sem alterar os indicadores oficiais.",
   },
   executive: {
     eyebrow: "Visão estratégica",
@@ -2657,6 +2701,265 @@ function renderReversions() {
       <td><span class="status-badge ${contract.linkedActiveContractId ? "health-ok" : "health-warning"}">${contract.linkedActiveContractId ? "Vinculado" : "Pendente"}</span></td>
     </tr>
   `).join("") || emptyRow(8, "Nenhum contrato revertido identificado.");
+}
+
+function renderTreatment() {
+  if (state.currentRole !== "admin") return;
+
+  state.treatmentCases = buildTreatmentCases({
+    contracts: state.contracts,
+    reversions: state.reversions,
+    activeTerminationConflicts: state.activeTerminationConflicts,
+    reviews: state.treatmentReviews,
+  });
+  const summary = summarizeTreatmentCases(state.treatmentCases);
+  const filtered = filterTreatmentCases(state.treatmentCases);
+
+  document.getElementById("treatmentKpis").innerHTML = [
+    metric("Casos Detectados", summary.total, `${summary.critical} de alta criticidade`, summary.critical ? "danger" : "success"),
+    metric("Pendentes", summary.pending, `${summary.automatable} com regra conclusiva`, summary.pending ? "warning" : "success"),
+    metric("Tratados", summary.treated, "Validados pelo administrador", "success"),
+    metric("Diretoria", summary.directorate, "Exigem decisão externa", summary.directorate ? "navy" : ""),
+    metric("Revisar Novamente", summary.stale, "A fonte mudou após a decisão", summary.stale ? "danger" : "success"),
+  ].join("");
+
+  renderTreatmentImpact(summary);
+  document.getElementById("treatmentSummary").textContent = `${filtered.length} de ${summary.total} ${summary.total === 1 ? "caso" : "casos"}`;
+  document.getElementById("treatmentCaseList").innerHTML = [
+    state.treatmentLoadError ? `
+      <div class="treatment-system-warning" role="alert">
+        <strong>Decisões anteriores indisponíveis</strong>
+        <span>${escapeHtml(state.treatmentLoadError)}</span>
+      </div>
+    ` : "",
+    ...filtered.map(treatmentCaseMarkup),
+    !filtered.length ? `
+      <div class="treatment-empty-state">
+        <strong>Nenhum caso nesta visão</strong>
+        <span>Ajuste os filtros ou aguarde a próxima atualização da base.</span>
+      </div>
+    ` : "",
+  ].join("");
+}
+
+function renderTreatmentImpact(summary) {
+  const official = {
+    active: state.contracts.length,
+    portfolio: state.contracts.reduce((total, item) => total + toNumber(item.totalUpdatedValue), 0),
+    integrated: state.contracts.reduce((total, item) => total + toNumber(item.effectivePaidValue), 0),
+  };
+  const validated = {
+    active: official.active + summary.validated.activeDelta,
+    portfolio: official.portfolio + summary.validated.portfolioDelta,
+    integrated: official.integrated + summary.validated.integratedDelta,
+  };
+  const potential = {
+    active: official.active + summary.potential.activeDelta,
+    portfolio: official.portfolio + summary.potential.portfolioDelta,
+    integrated: official.integrated + summary.potential.integratedDelta,
+  };
+
+  document.getElementById("treatmentImpact").innerHTML = `
+    <div class="treatment-impact-heading">
+      <div>
+        <p class="eyebrow">RESULTADO COMPARATIVO</p>
+        <h3>Original x Tratado</h3>
+      </div>
+      <p>As colunas tratadas são simulações isoladas e não alteram o Painel da Inadimplência.</p>
+    </div>
+    <div class="treatment-impact-grid">
+      ${treatmentImpactColumn("Base Oficial", official, "Dados usados hoje nos indicadores", "official")}
+      ${treatmentImpactColumn("Tratado Validado", validated, `${summary.treated} decisões aprovadas`, "validated")}
+      ${treatmentImpactColumn("Potencial das Regras", potential, `${summary.automatable} casos com alta confiança`, "potential")}
+    </div>
+  `;
+}
+
+function treatmentImpactColumn(title, values, helper, tone) {
+  return `
+    <article class="treatment-impact-column treatment-impact-${tone}">
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(helper)}</small>
+      </div>
+      <dl>
+        <div><dt>Contratos ativos</dt><dd>${values.active}</dd></div>
+        <div><dt>Carteira total</dt><dd>${formatCurrency(values.portfolio)}</dd></div>
+        <div><dt>Integralizado</dt><dd>${formatCurrency(values.integrated)}</dd></div>
+      </dl>
+    </article>
+  `;
+}
+
+function filterTreatmentCases(cases) {
+  const query = normalizeReportText(document.getElementById("treatmentSearch").value);
+  const rule = document.getElementById("treatmentRuleFilter").value;
+  const decision = document.getElementById("treatmentDecisionFilter").value;
+  const confidence = document.getElementById("treatmentConfidenceFilter").value;
+  return cases.filter((item) => {
+    const contract = item.contract;
+    const searchable = normalizeReportText([
+      contract.primaryClient,
+      contract.contractCode,
+      contract.contractId,
+      contract.localizer,
+      item.ruleName,
+      item.issue,
+    ].join(" "));
+    if (query && !searchable.includes(query)) return false;
+    if (rule !== "all" && item.ruleId !== rule) return false;
+    if (decision !== "all" && item.decision !== decision) return false;
+    if (confidence !== "all" && item.confidence !== confidence) return false;
+    return true;
+  });
+}
+
+function treatmentCaseMarkup(item) {
+  const contract = item.contract;
+  const decision = treatmentDecisionLabel(item.decision);
+  const confidence = treatmentConfidenceLabel(item.confidence);
+  const reviewed = item.reviewedAt
+    ? `${item.reviewedBy || "Administrador"} · ${formatDate(item.reviewedAt)}`
+    : "Ainda não revisado";
+  const activeImpact = toNumber(item.proposal?.activeDelta);
+  const integratedImpact = toNumber(item.proposal?.integratedDelta);
+  const open = item.decision === TREATMENT_DECISIONS.PENDING || item.reviewStale;
+
+  return `
+    <details class="treatment-case treatment-case-${escapeAttr(item.severity)}" data-treatment-case="${escapeAttr(item.id)}"${open ? " open" : ""}>
+      <summary>
+        <span class="treatment-case-severity" aria-hidden="true"></span>
+        <span class="treatment-case-contract">
+          <strong>${escapeHtml(contract.primaryClient || "Cliente não informado")}</strong>
+          <small>${escapeHtml(contractDisplayCode(contract))} · Localizador ${escapeHtml(contractLocalizer(contract))}</small>
+        </span>
+        <span class="treatment-case-rule">
+          <strong>${escapeHtml(item.ruleName)}</strong>
+          <small>${escapeHtml(item.issue)}</small>
+        </span>
+        <span class="treatment-badge treatment-confidence-${escapeAttr(item.confidence)}">${escapeHtml(confidence)}</span>
+        <span class="treatment-badge treatment-decision-${escapeAttr(item.decision)}">${escapeHtml(decision)}</span>
+      </summary>
+      <div class="treatment-case-body">
+        ${item.reviewStale ? `
+          <div class="treatment-stale-warning" role="alert">
+            <strong>A evidência mudou</strong>
+            <span>A decisão anterior foi preservada no histórico, mas este caso precisa de nova revisão.</span>
+          </div>
+        ` : ""}
+        <div class="treatment-case-analysis">
+          <section>
+            <p class="eyebrow">EVIDÊNCIAS DA BASE</p>
+            <ul>${item.evidence.map((evidence) => `<li>${escapeHtml(evidence)}</li>`).join("")}</ul>
+          </section>
+          <section>
+            <p class="eyebrow">REGRA ESPERADA</p>
+            <p>${escapeHtml(item.expected)}</p>
+          </section>
+          <section class="treatment-proposal">
+            <p class="eyebrow">RESULTADO PROPOSTO</p>
+            <p>${escapeHtml(item.proposedSummary)}</p>
+            <div class="treatment-proposal-impact">
+              <span>Ativos <strong>${formatSignedNumber(activeImpact)}</strong></span>
+              <span>Integralizado <strong>${formatSignedCurrency(integratedImpact)}</strong></span>
+            </div>
+          </section>
+        </div>
+        <label class="treatment-note-field">
+          Anotação da análise
+          <textarea maxlength="2000" rows="2" placeholder="Registre a conclusão, a conferência realizada ou o ponto a levar à diretoria.">${escapeHtml(item.note)}</textarea>
+        </label>
+        <div class="treatment-case-footer">
+          <small>${escapeHtml(reviewed)}</small>
+          <div class="treatment-case-actions">
+            <button class="primary-button" type="button" data-treatment-decision="treated"${item.resolvable ? "" : " disabled title=\"A regra ainda não possui evidência suficiente para tratar automaticamente.\""}>TRATAR</button>
+            <button class="secondary-button" type="button" data-treatment-decision="directorate">DIRETORIA</button>
+            <button class="secondary-button" type="button" data-treatment-decision="kept">MANTER ORIGINAL</button>
+            <button class="ghost-button" type="button" data-treatment-decision="pending">REABRIR</button>
+          </div>
+        </div>
+      </div>
+    </details>
+  `;
+}
+
+function treatmentDecisionLabel(decision) {
+  return {
+    pending: "Pendente",
+    treated: "Tratado",
+    directorate: "Diretoria",
+    kept: "Original mantido",
+  }[decision] || "Pendente";
+}
+
+function treatmentConfidenceLabel(confidence) {
+  return {
+    high: "Confiança alta",
+    medium: "Confiança média",
+    low: "Confiança baixa",
+  }[confidence] || "Confiança não avaliada";
+}
+
+function formatSignedNumber(value) {
+  const number = toNumber(value);
+  return number > 0 ? `+${number}` : String(number);
+}
+
+function formatSignedCurrency(value) {
+  const number = toNumber(value);
+  if (!number) return formatCurrency(0);
+  return `${number > 0 ? "+" : "-"}${formatCurrency(Math.abs(number))}`;
+}
+
+function clearTreatmentFilters() {
+  document.getElementById("treatmentSearch").value = "";
+  document.getElementById("treatmentRuleFilter").value = "all";
+  document.getElementById("treatmentDecisionFilter").value = "all";
+  document.getElementById("treatmentConfidenceFilter").value = "all";
+  renderTreatment();
+}
+
+async function handleTreatmentAction(event) {
+  const trigger = event.target.closest("[data-treatment-decision]");
+  if (!trigger || state.currentRole !== "admin") return;
+  const card = trigger.closest("[data-treatment-case]");
+  const item = state.treatmentCases.find((candidate) => candidate.id === card?.dataset.treatmentCase);
+  if (!item) return;
+  const decision = trigger.dataset.treatmentDecision;
+  const note = card.querySelector("textarea")?.value.trim() || "";
+  if ([TREATMENT_DECISIONS.DIRECTORATE, TREATMENT_DECISIONS.KEPT].includes(decision) && note.length < 6) {
+    toast("Registre uma justificativa curta antes desta decisão.");
+    card.querySelector("textarea")?.focus();
+    return;
+  }
+  if (decision === TREATMENT_DECISIONS.TREATED && !item.resolvable) {
+    toast("Este caso ainda não possui evidência suficiente para tratamento automático.");
+    return;
+  }
+
+  const buttons = card.querySelectorAll("button");
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    const saved = await db.saveTreatmentReview({
+      caseId: item.id,
+      contractId: String(item.contract.contractId),
+      ruleId: item.ruleId,
+      sourceFingerprint: item.sourceFingerprint,
+      decision,
+      note,
+      proposal: item.proposal,
+      reviewedBy: state.currentUser,
+    });
+    state.treatmentReviews = [
+      ...state.treatmentReviews.filter((review) => review.caseId !== saved.caseId),
+      saved,
+    ];
+    renderTreatment();
+    toast("Decisão de tratamento registrada sem alterar a base oficial.");
+  } catch (error) {
+    buttons.forEach((button) => { button.disabled = false; });
+    toast(error?.message || "Não foi possível registrar a decisão.");
+  }
 }
 
 function renderDataHealth() {

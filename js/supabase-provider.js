@@ -1,4 +1,4 @@
-import { Database } from "./database.js?v=20260615-1";
+import { Database } from "./database.js?v=20260701-1";
 import { requestTotpVerification } from "./mfa-dialog.js?v=20260614-1";
 import { SupabaseClient } from "./supabase-client.js?v=20260614-1";
 import { enrichContract, todayIso } from "./utils.js";
@@ -155,6 +155,45 @@ export class SupabaseProvider extends Database {
 
   async getSourceExceptions() {
     return this.getPayloadCollection("source_exceptions", "viewer_source_exceptions");
+  }
+
+  async getTreatmentReviews() {
+    const rows = await this.client.rpc("admin_list_treatment_reviews");
+    return rows.map((row) => ({
+      caseId: row.case_id,
+      contractId: row.contract_id,
+      ruleId: row.rule_id,
+      sourceFingerprint: row.source_fingerprint,
+      decision: row.decision,
+      note: row.note || "",
+      proposal: row.proposal || {},
+      reviewedBy: row.reviewed_by_name || "",
+      reviewedAt: row.reviewed_at,
+    }));
+  }
+
+  async saveTreatmentReview(review) {
+    const rows = await this.client.rpc("admin_save_treatment_review", {
+      p_case_id: review.caseId,
+      p_contract_id: review.contractId,
+      p_rule_id: review.ruleId,
+      p_source_fingerprint: review.sourceFingerprint,
+      p_decision: review.decision,
+      p_note: review.note || null,
+      p_proposal: review.proposal || {},
+    });
+    const row = rows?.[0];
+    return row ? {
+      caseId: row.case_id,
+      contractId: row.contract_id,
+      ruleId: row.rule_id,
+      sourceFingerprint: row.source_fingerprint,
+      decision: row.decision,
+      note: row.note || "",
+      proposal: row.proposal || {},
+      reviewedBy: row.reviewed_by_name || "",
+      reviewedAt: row.reviewed_at,
+    } : review;
   }
 
   async setSourceTerminations(contracts) {

@@ -272,6 +272,7 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
   let missingClientCount = 0;
   let missingContractCodeCount = 0;
   let activeWithTerminationEvidenceCount = 0;
+  let activeWithBlockedFinancialStatusCount = 0;
   let paidIntegrityIssueCount = 0;
   let integratedAboveTotalCount = 0;
   let invalidPaidPercentCount = 0;
@@ -337,6 +338,14 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
     )) {
       activeWithTerminationEvidenceCount += 1;
     }
+    const financialStatus = financialStatusHeader ? normalizeHeader(row[financialStatusHeader]) : "";
+    if (
+      status === "ativo"
+      && ["impedido", "bloqueado", "cancelado", "distratado", "rescindido", "encerrado", "inativo"]
+        .some((term) => financialStatus.includes(term))
+    ) {
+      activeWithBlockedFinancialStatusCount += 1;
+    }
     if (!recognized) unknownStatuses.set(status || "vazio", (unknownStatuses.get(status || "vazio") || 0) + 1);
   });
 
@@ -375,7 +384,10 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
     warnings.push(`Status ainda não classificados (${summary}). Esses registros serão preservados em Alertas de Dados e ficarão fora dos indicadores.`);
   }
   if (activeWithTerminationEvidenceCount) {
-    warnings.push(`${activeWithTerminationEvidenceCount} registros estão com status Ativo e dados de cancelamento/distrato preenchidos. O status Ativo prevalecerá e esses contratos não entrarão na aba Distratos.`);
+    warnings.push(`${activeWithTerminationEvidenceCount} registros estão com status Ativo e dados de cancelamento/distrato preenchidos. O status Ativo prevalecerá na base oficial e os casos serão enviados à Central de Tratamento.`);
+  }
+  if (activeWithBlockedFinancialStatusCount) {
+    warnings.push(`${activeWithBlockedFinancialStatusCount} registros estão com status Ativo e situação financeira impeditiva. A base oficial será preservada e os casos serão analisados na Central de Tratamento.`);
   }
 
   if (paidIntegrityIssueCount) {
@@ -402,6 +414,7 @@ function validateRows(rows, resolvedHeaders, importSummary = {}) {
         .reduce((total, count) => total + count, 0),
     },
     activeWithTerminationEvidence: activeWithTerminationEvidenceCount,
+    activeWithBlockedFinancialStatus: activeWithBlockedFinancialStatusCount,
     financialHealth: {
       paidIntegrityIssues: paidIntegrityIssueCount,
       integratedAboveTotal: integratedAboveTotalCount,
@@ -461,6 +474,10 @@ function normalizeImportedRow(row, resolvedHeaders) {
 
   const product = String(output.product || "");
   const sourceTermination = detectSourceTermination(row, output);
+  const reportedTerminationDate = parseExcelDate(output.sourceTerminationDate);
+  const reportedTerminationReason = output.sourceTerminationReason
+    ? String(output.sourceTerminationReason).trim()
+    : null;
   const totalUpdatedValue = toNumber(output.totalUpdatedValue);
   const financedValue = toNumber(output.financedValue);
   const overdueValue = toNumber(output.overdueValue);
@@ -490,6 +507,8 @@ function normalizeImportedRow(row, resolvedHeaders) {
     sourceExtras,
     sourceFinancialAdjustments,
     ...sourceTermination,
+    reportedTerminationDate,
+    reportedTerminationReason,
     notes: "",
     manualStatus: null,
     previousStatus: null,

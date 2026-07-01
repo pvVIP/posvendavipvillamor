@@ -15,10 +15,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260626-3">
+  <link rel="stylesheet" href="css/style.css?v=20260701-1">
   <script src="vendor/chart.umd.min.js?v=4.4.7" defer></script>
   <script src="vendor/xlsx.full.min.js?v=0.20.3" defer></script>
-  <script src="js/app.js?v=20260626-3" type="module"></script>
+  <script src="js/app.js?v=20260701-1" type="module"></script>
 </head>
 <body data-active-tab="operational">
   <a class="skip-link" href="#mainContent">Ir para o conteúdo principal</a>
@@ -88,6 +88,10 @@
           <span class="nav-icon" aria-hidden="true">!</span>
           <span class="nav-label">ALERTAS DE DADOS</span>
         </button>
+        <button class="nav-tab" id="treatmentTab" type="button" data-tab-target="treatment" aria-controls="treatmentPanel" aria-label="Tratamento" title="Tratamento" hidden>
+          <span class="nav-icon" aria-hidden="true">T</span>
+          <span class="nav-label">TRATAMENTO</span>
+        </button>
         <button class="nav-tab" id="executiveTab" type="button" data-tab-target="executive" aria-controls="executivePanel" aria-label="Painel da Inadimplência" title="Painel da Inadimplência">
           <span class="nav-icon" aria-hidden="true">◈</span>
           <span class="nav-label">PAINEL DA INADIMPLÊNCIA</span>
@@ -129,7 +133,7 @@
           <p id="topbarDescription">Priorize contratos, registre contexto e acompanhe a exposição financeira.</p>
         </div>
         <div class="topbar-actions">
-          <button class="secondary-button contextual-action" id="refreshButton" type="button" data-tabs="operational terminations reversions health executive">Recalcular</button>
+          <button class="secondary-button contextual-action" id="refreshButton" type="button" data-tabs="operational terminations reversions health treatment executive">Recalcular</button>
           <button class="secondary-button contextual-action" id="operationalListReportButton" type="button" data-tabs="operational">Relatório Lista</button>
           <button class="primary-button contextual-action" id="newTerminationButton" type="button" data-tabs="terminations">Lançar distrato</button>
           <button class="secondary-button contextual-action" id="simulateTerminationButton" type="button" data-tabs="terminations">Simulação</button>
@@ -375,6 +379,67 @@
           <div class="metrics-row health-metrics" id="healthKpis" aria-live="polite"></div>
         </div>
         <div class="health-alerts" id="healthAlerts" aria-live="polite"></div>
+      </section>
+
+      <section class="tab-panel treatment-panel" id="treatmentPanel" role="region" aria-labelledby="treatmentTab" hidden>
+        <div class="treatment-safety-banner">
+          <div>
+            <p class="eyebrow">AMBIENTE ADMINISTRATIVO</p>
+            <h2>Central de Tratamento</h2>
+            <p>Analise evidências, valide regras e separe pendências que exigem decisão humana.</p>
+          </div>
+          <span class="treatment-isolation-badge">SEM IMPACTO NOS INDICADORES OFICIAIS</span>
+        </div>
+
+        <div class="metrics-row treatment-metrics" id="treatmentKpis" aria-live="polite"></div>
+        <div class="treatment-impact-panel" id="treatmentImpact" aria-live="polite"></div>
+
+        <div class="treatment-workspace">
+          <div class="treatment-toolbar">
+            <div class="treatment-toolbar-heading">
+              <div>
+                <p class="eyebrow">FILA DE ANÁLISE</p>
+                <h3>Inconsistências detectadas</h3>
+              </div>
+              <strong id="treatmentSummary">0 casos</strong>
+            </div>
+            <div class="treatment-filters">
+              <label>
+                Buscar
+                <input type="search" id="treatmentSearch" placeholder="Cliente, contrato ou localizador">
+              </label>
+              <label>
+                Regra
+                <select id="treatmentRuleFilter">
+                  <option value="all">Todas as regras</option>
+                  <option value="active-termination-conflict">Ativo com evidência de distrato</option>
+                  <option value="active-zero-integrated">Ativo com integralização zerada</option>
+                </select>
+              </label>
+              <label>
+                Situação
+                <select id="treatmentDecisionFilter">
+                  <option value="all">Todas</option>
+                  <option value="pending">Novos e pendentes</option>
+                  <option value="treated">Tratados</option>
+                  <option value="directorate">Levar à diretoria</option>
+                  <option value="kept">Manter dado original</option>
+                </select>
+              </label>
+              <label>
+                Confiança
+                <select id="treatmentConfidenceFilter">
+                  <option value="all">Todas</option>
+                  <option value="high">Alta</option>
+                  <option value="medium">Média</option>
+                  <option value="low">Baixa</option>
+                </select>
+              </label>
+              <button class="secondary-button" id="clearTreatmentFiltersButton" type="button">LIMPAR</button>
+            </div>
+          </div>
+          <div class="treatment-case-list" id="treatmentCaseList" aria-live="polite"></div>
+        </div>
       </section>
 
       <section class="tab-panel" id="executivePanel" role="region" aria-labelledby="executiveTab">

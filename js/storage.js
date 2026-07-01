@@ -40,7 +40,7 @@ export class LocalFallbackStorage {
 }
 
 export class IndexedDbStorage {
-  constructor(dbName = "villamor-inadimplencia", version = 4) {
+  constructor(dbName = "villamor-inadimplencia", version = 5) {
     this.dbName = dbName;
     this.version = version;
     this.db = null;
@@ -61,6 +61,7 @@ export class IndexedDbStorage {
         this.ensureStore(db, "sourceTerminations", "contractId");
         this.ensureStore(db, "sourceReversions", "contractId");
         this.ensureStore(db, "sourceExceptions", "contractId");
+        this.ensureStore(db, "treatmentReviews", "caseId");
         this.ensureStore(db, "auditLogs", "id");
         this.ensureStore(db, "importLogs", "id");
         this.ensureStore(db, "settings", "key");
@@ -132,6 +133,7 @@ export class IndexedDbStorage {
 
 function fallbackKeyFor(storeName) {
   if (["contracts", "terminatedContracts", "sourceTerminations", "sourceReversions", "sourceExceptions"].includes(storeName)) return "contractId";
+  if (storeName === "treatmentReviews") return "caseId";
   if (storeName === "settings") return "key";
   return "id";
 }
