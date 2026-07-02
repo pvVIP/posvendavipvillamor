@@ -20,15 +20,25 @@ const FINANCIAL_BLOCK_TERMS = [
 export function buildTreatmentCases({
   contracts = [],
   reversions = [],
+  historicalTerminated = [],
   activeTerminationConflicts = [],
   reviews = [],
 } = {}) {
   const reviewMap = new Map(reviews.map((review) => [review.caseId, review]));
   const conflictIds = new Set(activeTerminationConflicts.map((contract) => String(contract.contractId)));
   const reversionsByActive = groupReversionsByActive(reversions);
+  const transferCases = buildTransferredIntegrationCases(contracts, reversionsByActive);
+  const transferredIds = new Set(transferCases.map((item) => String(item.contract.contractId)));
   const cases = [
     ...buildActiveTerminationCases(contracts, conflictIds),
     ...buildZeroIntegratedCases(contracts, reversionsByActive),
+    ...buildActiveReversalChainCases(contracts),
+    ...transferCases,
+    ...buildPossibleDuplicateCases(contracts),
+    ...buildAdjustedValueDivergenceCases(contracts),
+    ...buildIncompletePaidCases(contracts, transferredIds),
+    ...buildOverdueAboveBalanceCases(contracts),
+    ...buildMissingHistoricalDateCases(reversions, historicalTerminated),
   ];
 
   return cases
@@ -204,6 +214,350 @@ function buildZeroIntegratedCases(contracts, reversionsByActive) {
   });
 }
 
+function buildActiveReversalChainCases(contracts) {
+  const activeById = new Map(contracts.map((contract) => [String(contract.contractId), contract]));
+  const childrenByParent = new Map();
+  contracts.forEach((child) => {
+    const parentId = String(child.originReversal || "").trim();
+    if (!parentId || parentId === String(child.contractId) || !activeById.has(parentId)) return;
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(child);
+  });
+
+  return [...childrenByParent.entries()].map(([parentId, children]) => {
+    const parent = activeById.get(parentId);
+    const childIds = children.map((item) => String(item.contractId)).sort();
+    const unambiguous = children.length === 1;
+    const proposal = {
+      action: unambiguous ? "reclassify_active_predecessor" : "investigate_active_reversal_chain",
+      treatedStatus: unambiguous ? "Revertido" : null,
+      activeDelta: unambiguous ? -1 : 0,
+      portfolioDelta: unambiguous ? -Math.max(0, toNumber(parent.totalUpdatedValue)) : 0,
+      integratedDelta: unambiguous ? -Math.max(0, toNumber(parent.effectivePaidValue)) : 0,
+      receivableDelta: unambiguous ? -Math.max(0, toNumber(parent.remainingBalance)) : 0,
+      overdueDelta: unambiguous ? -Math.max(0, toNumber(parent.overdueValue)) : 0,
+      relatedContractIds: childIds,
+    };
+    const sourceFingerprint = treatmentFingerprint({
+      ruleId: "active-reversal-chain",
+      parentId,
+      childIds,
+      parent: financialFingerprint(parent),
+      proposal,
+    });
+    return {
+      id: `active-reversal-chain:${parentId}:${childIds.join("-")}`,
+      ruleId: "active-reversal-chain",
+      ruleName: "Dois ativos na mesma cadeia de reversão",
+      contract: parent,
+      severity: "critical",
+      confidence: unambiguous ? "high" : "medium",
+      autoEligible: unambiguous,
+      resolvable: unambiguous,
+      issue: "Um contrato ativo também aparece como origem de outro contrato que continua ativo.",
+      evidence: [
+        `Ativo predecessor: ${parentId}`,
+        `Ativo(s) sucessor(es): ${childIds.join(", ")}`,
+        `Quantidade de sucessores ativos: ${children.length}`,
+      ],
+      expected: "Somente o contrato vigente da cadeia deve permanecer na carteira ativa.",
+      proposedSummary: unambiguous
+        ? "Classificar o predecessor como revertido apenas no resultado tratado e manter o sucessor como ativo."
+        : "A cadeia possui ramificações e precisa ser conferida antes de escolher o contrato vigente.",
+      proposal,
+      sourceFingerprint,
+    };
+  });
+}
+
+function buildTransferredIntegrationCases(contracts, reversionsByActive) {
+  return contracts.flatMap((contract) => {
+    if (normalize(contract.financialStatus) !== "quitado") return [];
+    const paid = Math.max(0, toNumber(contract.effectivePaidValue));
+    const entry = Math.max(0, toNumber(contract.entryValue));
+    const financed = Math.max(0, toNumber(contract.financedValue));
+    const percent = normalizedPercent(contract.effectivePaidPercent ?? contract.paidPercent);
+    if (paid <= 0 || entry <= 0 || financed <= 0 || percent === null || percent >= 99.99) return [];
+    if (Math.abs((paid + entry) - financed) > 0.02) return [];
+
+    const predecessors = (reversionsByActive.get(String(contract.contractId)) || [])
+      .filter((item) => Math.abs(toNumber(item.effectivePaidValue) - entry) <= 0.02);
+    if (predecessors.length !== 1) return [];
+
+    const predecessor = predecessors[0];
+    const remaining = Math.max(0, toNumber(contract.remainingBalance));
+    const overdue = Math.max(0, toNumber(contract.overdueValue));
+    const treatedPaid = paid + entry;
+    const proposal = {
+      action: "reconcile_transferred_integration",
+      originalIntegratedValue: paid,
+      treatedIntegratedValue: treatedPaid,
+      treatedPaidPercent: 100,
+      treatedRemainingBalance: 0,
+      treatedOverdueValue: 0,
+      activeDelta: 0,
+      portfolioDelta: 0,
+      integratedDelta: entry,
+      receivableDelta: -remaining,
+      overdueDelta: -overdue,
+      predecessorId: String(predecessor.contractId),
+    };
+    const contractId = String(contract.contractId);
+    const sourceFingerprint = treatmentFingerprint({
+      ruleId: "transferred-integration",
+      contractId,
+      predecessor: financialFingerprint(predecessor),
+      contract: financialFingerprint(contract),
+      entry,
+      proposal,
+    });
+    return [{
+      id: `transferred-integration:${contractId}`,
+      ruleId: "transferred-integration",
+      ruleName: "Integralização transferida por reversão",
+      contract,
+      severity: "critical",
+      confidence: "high",
+      autoEligible: true,
+      resolvable: true,
+      issue: "O contrato está quitado, mas parte da integralização permaneceu registrada no predecessor revertido.",
+      evidence: [
+        `Integralizado atual: ${money(paid)}`,
+        `Entrada transferida: ${money(entry)}`,
+        `Valor financiado: ${money(financed)}`,
+        `Predecessor confirmado: ${String(predecessor.contractId)}`,
+        `Integralizado do predecessor: ${money(predecessor.effectivePaidValue)}`,
+      ],
+      expected: "Contrato quitado com 100% do valor financiado integralizado e saldo a receber zerado.",
+      proposedSummary: `Somar a entrada transferida ao integralizado (${money(treatedPaid)}) e zerar saldo e atraso somente no resultado tratado.`,
+      proposal,
+      sourceFingerprint,
+    }];
+  });
+}
+
+function buildPossibleDuplicateCases(contracts) {
+  const groups = new Map();
+  contracts.forEach((contract) => {
+    const document = normalize(contract.primaryDocument);
+    const property = normalize(contract.property);
+    const quota = normalize(contract.quota);
+    const createdAt = dateOnly(contract.createdAt);
+    if (!document || !property || !quota || !createdAt) return;
+    const key = [
+      document,
+      property,
+      quota,
+      createdAt,
+      cents(contract.effectivePaidValue),
+      cents(contract.remainingBalance),
+      cents(contract.totalUpdatedValue),
+    ].join("|");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(contract);
+  });
+
+  return [...groups.values()].filter((items) => items.length > 1).map((items) => {
+    const ordered = [...items].sort((a, b) => String(a.contractId).localeCompare(String(b.contractId), "pt-BR"));
+    const anchor = ordered[0];
+    const identifiers = ordered.map((item) => String(item.contractId));
+    const proposal = emptyImpactProposal("investigate_possible_duplicate", {
+      relatedContractIds: identifiers,
+      probableExcessActive: items.length - 1,
+    });
+    const sourceFingerprint = treatmentFingerprint({
+      ruleId: "possible-active-duplicate",
+      identifiers,
+      signatures: ordered.map(financialFingerprint),
+    });
+    return {
+      id: `possible-active-duplicate:${identifiers.join("-")}`,
+      ruleId: "possible-active-duplicate",
+      ruleName: "Possível duplicidade ativa",
+      contract: anchor,
+      severity: "critical",
+      confidence: "high",
+      autoEligible: false,
+      resolvable: false,
+      issue: "Dois ou mais ativos repetem titular, imóvel, cota, data e composição financeira.",
+      evidence: [
+        `Localizadores envolvidos: ${identifiers.join(", ")}`,
+        `Imóvel: ${anchor.property || "-"}`,
+        `Cota: ${anchor.quota || "-"}`,
+        `Data do contrato: ${dateOnly(anchor.createdAt) || "-"}`,
+        `Valor por registro: ${money(anchor.totalUpdatedValue)}`,
+      ],
+      expected: "Uma única obrigação ativa para a mesma titularidade, imóvel, cota, data e valores.",
+      proposedSummary: "Confirmar qual contrato é vigente antes de retirar qualquer registro da carteira tratada.",
+      proposal,
+      sourceFingerprint,
+    };
+  });
+}
+
+function buildAdjustedValueDivergenceCases(contracts) {
+  return contracts.flatMap((contract) => {
+    const adjustedValue = extraNumericValue(contract.sourceExtras, "valor total reajustado");
+    if (adjustedValue === null) return [];
+    const typedValue = Math.max(0, toNumber(contract.totalUpdatedValue));
+    const difference = adjustedValue - typedValue;
+    if (Math.abs(difference) <= 0.01) return [];
+    const proposal = emptyImpactProposal("validate_adjusted_value_semantics", {
+      currentTotalValue: typedValue,
+      sourceAdjustedValue: adjustedValue,
+      investigatedPortfolioDelta: difference,
+    });
+    const contractId = String(contract.contractId);
+    return [{
+      id: `adjusted-value-divergence:${contractId}`,
+      ruleId: "adjusted-value-divergence",
+      ruleName: "Valor reajustado não conciliado",
+      contract,
+      severity: "warning",
+      confidence: "medium",
+      autoEligible: false,
+      resolvable: false,
+      issue: "O valor total usado na carteira diverge do campo adicional Valor Total Reajustado.",
+      evidence: [
+        `Valor usado atualmente: ${money(typedValue)}`,
+        `Valor Total Reajustado na origem: ${money(adjustedValue)}`,
+        `Diferença: ${signedMoney(difference)}`,
+      ],
+      expected: "Semântica financeira confirmada antes de escolher qual coluna representa a carteira oficial.",
+      proposedSummary: "Levar a definição das colunas ao ESOLUTION/diretoria; não substituir valores automaticamente.",
+      proposal,
+      sourceFingerprint: treatmentFingerprint({
+        ruleId: "adjusted-value-divergence",
+        contractId,
+        typedValue,
+        adjustedValue,
+      }),
+    }];
+  });
+}
+
+function buildIncompletePaidCases(contracts, transferredIds) {
+  return contracts.flatMap((contract) => {
+    if (normalize(contract.financialStatus) !== "quitado") return [];
+    if (transferredIds.has(String(contract.contractId))) return [];
+    const paid = Math.max(0, toNumber(contract.effectivePaidValue));
+    const remaining = Math.max(0, toNumber(contract.remainingBalance));
+    const percent = normalizedPercent(contract.effectivePaidPercent ?? contract.paidPercent);
+    if (paid <= financialTolerance(contract.totalUpdatedValue)) return [];
+    const issues = [
+      percent !== null && percent < 99.99 ? `Integralização informada: ${percent.toFixed(2)}%` : "",
+      remaining > 0.01 ? `Saldo a receber: ${money(remaining)}` : "",
+    ].filter(Boolean);
+    if (!issues.length) return [];
+    const proposal = emptyImpactProposal("investigate_incomplete_paid_contract", {
+      currentIntegratedValue: paid,
+      currentRemainingBalance: remaining,
+      currentPaidPercent: percent,
+    });
+    const contractId = String(contract.contractId);
+    return [{
+      id: `incomplete-paid-contract:${contractId}`,
+      ruleId: "incomplete-paid-contract",
+      ruleName: "Quitado financeiramente incompleto",
+      contract,
+      severity: "critical",
+      confidence: "high",
+      autoEligible: false,
+      resolvable: false,
+      issue: "O status financeiro indica quitação, mas percentual ou saldo ainda demonstram obrigação aberta.",
+      evidence: [`Integralizado: ${money(paid)}`, ...issues],
+      expected: "Contrato quitado com 100% integralizado e saldo a receber igual a zero.",
+      proposedSummary: "Conferir valores transferidos, estornos e saldo antes de corrigir a camada tratada.",
+      proposal,
+      sourceFingerprint: treatmentFingerprint({
+        ruleId: "incomplete-paid-contract",
+        contractId,
+        paid,
+        remaining,
+        percent,
+      }),
+    }];
+  });
+}
+
+function buildOverdueAboveBalanceCases(contracts) {
+  return contracts.flatMap((contract) => {
+    const overdue = Math.max(0, toNumber(contract.overdueValue));
+    const remaining = Math.max(0, toNumber(contract.remainingBalance));
+    if (overdue <= remaining + 0.01) return [];
+    const contractId = String(contract.contractId);
+    return [{
+      id: `overdue-above-balance:${contractId}`,
+      ruleId: "overdue-above-balance",
+      ruleName: "Atraso superior ao saldo",
+      contract,
+      severity: "critical",
+      confidence: "high",
+      autoEligible: false,
+      resolvable: false,
+      issue: "O valor em atraso supera o saldo total que ainda consta para recebimento.",
+      evidence: [
+        `Valor em atraso: ${money(overdue)}`,
+        `Saldo a receber: ${money(remaining)}`,
+        `Excesso: ${money(overdue - remaining)}`,
+      ],
+      expected: "Atraso menor ou igual ao saldo a receber, salvo juros ou encargos documentados.",
+      proposedSummary: "Conferir se a diferença representa juros/multa ou erro no saldo antes de tratar.",
+      proposal: emptyImpactProposal("investigate_overdue_above_balance", {
+        currentOverdueValue: overdue,
+        currentRemainingBalance: remaining,
+      }),
+      sourceFingerprint: treatmentFingerprint({
+        ruleId: "overdue-above-balance",
+        contractId,
+        overdue,
+        remaining,
+      }),
+    }];
+  });
+}
+
+function buildMissingHistoricalDateCases(reversions, historicalTerminated) {
+  const missingReversions = reversions.filter((contract) => !contract.sourceReversalDate).map((contract) => ({
+    contract,
+    eventType: "reversão",
+    ruleId: "missing-reversal-date",
+  }));
+  const missingTerminations = historicalTerminated.filter((contract) => !contract.sourceTerminationDate).map((contract) => ({
+    contract,
+    eventType: "distrato",
+    ruleId: "missing-termination-date",
+  }));
+  return [...missingReversions, ...missingTerminations].map(({ contract, eventType, ruleId }) => {
+    const contractId = String(contract.contractId);
+    return {
+      id: `${ruleId}:${contractId}`,
+      ruleId: "missing-historical-date",
+      ruleName: "Evento histórico sem data",
+      contract,
+      severity: "warning",
+      confidence: "high",
+      autoEligible: false,
+      resolvable: false,
+      issue: `O histórico de ${eventType} não possui data válida para análise temporal.`,
+      evidence: [
+        `Tipo de evento: ${eventType}`,
+        `Status de origem: ${contract.sourceStatus || "-"}`,
+        `Saldo associado: ${money(contract.remainingBalance)}`,
+      ],
+      expected: "Todo distrato ou reversão deve possuir uma data de ocorrência verificável.",
+      proposedSummary: "Preencher a data na origem ou registrar a pendência para decisão administrativa.",
+      proposal: emptyImpactProposal("complete_historical_event_date", { eventType }),
+      sourceFingerprint: treatmentFingerprint({
+        ruleId,
+        contractId,
+        eventType,
+        sourceStatus: contract.sourceStatus,
+      }),
+    };
+  });
+}
+
 function attachReview(item, review) {
   const reviewStale = Boolean(review && review.sourceFingerprint !== item.sourceFingerprint);
   return {
@@ -239,6 +593,60 @@ function findTerminationEvidence(sourceExtras = {}) {
   });
 }
 
+function extraNumericValue(sourceExtras, expectedKey) {
+  const entry = Object.entries(sourceExtras || {})
+    .find(([key]) => normalize(key) === expectedKey);
+  if (!entry || entry[1] === null || entry[1] === undefined || entry[1] === "") return null;
+  if (typeof entry[1] === "number") return Number.isFinite(entry[1]) ? entry[1] : null;
+  const clean = String(entry[1]).replace(/[R$\s]/g, "");
+  const normalizedValue = clean.includes(",")
+    ? clean.replace(/\./g, "").replace(",", ".")
+    : clean;
+  const value = Number(normalizedValue);
+  return Number.isFinite(value) ? value : null;
+}
+
+function emptyImpactProposal(action, extra = {}) {
+  return {
+    action,
+    activeDelta: 0,
+    portfolioDelta: 0,
+    integratedDelta: 0,
+    receivableDelta: 0,
+    overdueDelta: 0,
+    ...extra,
+  };
+}
+
+function financialFingerprint(contract) {
+  return {
+    contractId: String(contract.contractId),
+    sourceStatus: contract.sourceStatus,
+    financialStatus: contract.financialStatus,
+    originReversal: contract.originReversal,
+    financedValue: toNumber(contract.financedValue),
+    entryValue: toNumber(contract.entryValue),
+    totalUpdatedValue: toNumber(contract.totalUpdatedValue),
+    effectivePaidValue: toNumber(contract.effectivePaidValue),
+    effectivePaidPercent: normalizedPercent(contract.effectivePaidPercent ?? contract.paidPercent),
+    remainingBalance: toNumber(contract.remainingBalance),
+    overdueValue: toNumber(contract.overdueValue),
+  };
+}
+
+function dateOnly(value) {
+  return value ? String(value).slice(0, 10) : "";
+}
+
+function cents(value) {
+  return Math.round(toNumber(value) * 100);
+}
+
+function signedMoney(value) {
+  const number = toNumber(value);
+  return `${number > 0 ? "+" : number < 0 ? "-" : ""}${money(Math.abs(number))}`;
+}
+
 function hasSettlementEvidence(contract) {
   if (normalize(contract.financialStatus) === "quitado") return true;
   if (contract.settlementDate) return true;
@@ -252,7 +660,16 @@ function hasSettlementEvidence(contract) {
 }
 
 function sumImpact(cases) {
-  return cases.reduce((total, item) => ({
+  const highestPriorityByContract = new Map();
+  cases.forEach((item) => {
+    const contractId = String(item.contract?.contractId || item.id);
+    const current = highestPriorityByContract.get(contractId);
+    if (!current || impactPriority(item) > impactPriority(current)) {
+      highestPriorityByContract.set(contractId, item);
+    }
+  });
+
+  return [...highestPriorityByContract.values()].reduce((total, item) => ({
     activeDelta: total.activeDelta + toNumber(item.proposal?.activeDelta),
     portfolioDelta: total.portfolioDelta + toNumber(item.proposal?.portfolioDelta),
     integratedDelta: total.integratedDelta + toNumber(item.proposal?.integratedDelta),
@@ -265,6 +682,15 @@ function sumImpact(cases) {
     receivableDelta: 0,
     overdueDelta: 0,
   });
+}
+
+function impactPriority(item) {
+  return {
+    reclassify_terminated: 100,
+    reclassify_active_predecessor: 90,
+    reconcile_transferred_integration: 80,
+    replace_integrated_value: 70,
+  }[item.proposal?.action] || 0;
 }
 
 function compareTreatmentCases(a, b) {

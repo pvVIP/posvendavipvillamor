@@ -2753,6 +2753,7 @@ body.filter-dock-active .toast-host {
 }
 
 .treatment-safety-banner,
+.treatment-rule-panel,
 .treatment-impact-panel,
 .treatment-workspace {
   border: 1px solid var(--line);
@@ -2803,6 +2804,75 @@ body.filter-dock-active .toast-host {
 
 .treatment-metrics .metric-card {
   min-height: 116px;
+}
+
+.treatment-rule-panel {
+  padding: 20px;
+}
+
+.treatment-rule-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+}
+
+.treatment-rule-heading h3,
+.treatment-rule-heading p {
+  margin: 3px 0 0;
+}
+
+.treatment-rule-heading > p {
+  max-width: 460px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+
+.treatment-rule-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.treatment-rule-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  min-height: 92px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.treatment-rule-card:hover,
+.treatment-rule-card.active {
+  border-color: rgba(25, 118, 168, 0.55);
+  border-left-color: #1976a8;
+  background: rgba(25, 118, 168, 0.07);
+}
+
+.treatment-rule-card span {
+  align-self: center;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.treatment-rule-card strong {
+  color: var(--brand);
+  font-size: 24px;
+}
+
+.treatment-rule-card small {
+  grid-column: 1 / -1;
+  color: var(--muted);
 }
 
 .treatment-impact-panel {
@@ -2930,6 +3000,22 @@ body.filter-dock-active .toast-host {
 
 .treatment-case-list {
   display: grid;
+}
+
+.treatment-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-height: 68px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.treatment-pagination[hidden] {
+  display: none;
 }
 
 .treatment-case {
@@ -3171,6 +3257,7 @@ body.filter-dock-active .toast-host {
 }
 
 [data-theme="dark"] .treatment-safety-banner,
+[data-theme="dark"] .treatment-rule-panel,
 [data-theme="dark"] .treatment-impact-panel,
 [data-theme="dark"] .treatment-workspace,
 [data-theme="dark"] .treatment-case,
@@ -3182,6 +3269,15 @@ body.filter-dock-active .toast-host {
 [data-theme="dark"] .treatment-isolation-badge,
 [data-theme="dark"] .treatment-proposal {
   color: #9fd9f5;
+}
+
+[data-theme="dark"] .treatment-rule-card {
+  background: #292d31;
+}
+
+[data-theme="dark"] .treatment-rule-card:hover,
+[data-theme="dark"] .treatment-rule-card.active {
+  background: rgba(72, 170, 220, 0.12);
 }
 
 [data-theme="dark"] .treatment-confidence-high,
@@ -3207,6 +3303,10 @@ body.filter-dock-active .toast-host {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .treatment-rule-overview {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .treatment-case > summary {
     grid-template-columns: 5px minmax(180px, 0.8fr) minmax(260px, 1.4fr) 112px;
   }
@@ -3219,6 +3319,7 @@ body.filter-dock-active .toast-host {
 
 @media (max-width: 780px) {
   .treatment-safety-banner,
+  .treatment-rule-heading,
   .treatment-impact-heading,
   .treatment-toolbar-heading,
   .treatment-case-footer {
@@ -3232,6 +3333,15 @@ body.filter-dock-active .toast-host {
 
   .treatment-impact-heading > p {
     text-align: left;
+  }
+
+  .treatment-rule-heading > p {
+    max-width: none;
+    text-align: left;
+  }
+
+  .treatment-rule-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .treatment-impact-grid,
@@ -3297,6 +3407,21 @@ body.filter-dock-active .toast-host {
 
   .treatment-case-actions {
     grid-template-columns: 1fr;
+  }
+
+  .treatment-rule-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .treatment-pagination {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .treatment-pagination span {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    text-align: center;
   }
 }
 

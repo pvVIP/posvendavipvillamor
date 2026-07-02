@@ -26,11 +26,11 @@ import {
   buildTreatmentCases,
   summarizeTreatmentCases,
   TREATMENT_DECISIONS,
-} from "./treatment.js?v=20260701-1";
+} from "./treatment.js?v=20260702-1";
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.07.01.1";
+const APP_VERSION = "2026.07.02.1";
 const state = {
   contracts: [],
   terminated: [],
@@ -78,6 +78,8 @@ const state = {
   treatmentReviews: [],
   treatmentCases: [],
   treatmentLoadError: "",
+  treatmentPage: 1,
+  treatmentPageSize: 25,
   accessUsers: [],
   accessSummary: { pending: 0, active: 0, suspended: 0, rejected: 0 },
   accessUsersLoaded: false,
@@ -477,8 +479,13 @@ function bindEvents() {
   document.getElementById("healthKpis").addEventListener("click", handleHealthKpiFilter);
   document.addEventListener("click", handleHealthOutsideClick);
   ["treatmentSearch", "treatmentRuleFilter", "treatmentDecisionFilter", "treatmentConfidenceFilter"]
-    .forEach((id) => document.getElementById(id).addEventListener("input", renderTreatment));
+    .forEach((id) => document.getElementById(id).addEventListener("input", () => {
+      state.treatmentPage = 1;
+      renderTreatment();
+    }));
   document.getElementById("clearTreatmentFiltersButton").addEventListener("click", clearTreatmentFilters);
+  document.getElementById("treatmentRuleOverview").addEventListener("click", handleTreatmentRuleFilter);
+  document.getElementById("treatmentPagination").addEventListener("click", handleTreatmentPagination);
   document.getElementById("treatmentCaseList").addEventListener("click", handleTreatmentAction);
   document.getElementById("healthAlertSearch").addEventListener("input", (event) => {
     state.healthAlertQuery = event.target.value;
@@ -2709,11 +2716,17 @@ function renderTreatment() {
   state.treatmentCases = buildTreatmentCases({
     contracts: state.contracts,
     reversions: state.reversions,
+    historicalTerminated: state.historicalTerminated,
     activeTerminationConflicts: state.activeTerminationConflicts,
     reviews: state.treatmentReviews,
   });
   const summary = summarizeTreatmentCases(state.treatmentCases);
+  syncTreatmentRuleOptions(state.treatmentCases);
   const filtered = filterTreatmentCases(state.treatmentCases);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / state.treatmentPageSize));
+  state.treatmentPage = Math.min(Math.max(1, state.treatmentPage), pageCount);
+  const pageStart = (state.treatmentPage - 1) * state.treatmentPageSize;
+  const visible = filtered.slice(pageStart, pageStart + state.treatmentPageSize);
 
   document.getElementById("treatmentKpis").innerHTML = [
     metric("Casos Detectados", summary.total, `${summary.critical} de alta criticidade`, summary.critical ? "danger" : "success"),
@@ -2723,8 +2736,11 @@ function renderTreatment() {
     metric("Revisar Novamente", summary.stale, "A fonte mudou após a decisão", summary.stale ? "danger" : "success"),
   ].join("");
 
+  renderTreatmentRuleOverview(state.treatmentCases);
   renderTreatmentImpact(summary);
-  document.getElementById("treatmentSummary").textContent = `${filtered.length} de ${summary.total} ${summary.total === 1 ? "caso" : "casos"}`;
+  document.getElementById("treatmentSummary").textContent = filtered.length
+    ? `${pageStart + 1}-${Math.min(pageStart + visible.length, filtered.length)} de ${filtered.length} filtrados`
+    : `0 de ${summary.total} casos`;
   document.getElementById("treatmentCaseList").innerHTML = [
     state.treatmentLoadError ? `
       <div class="treatment-system-warning" role="alert">
@@ -2732,7 +2748,7 @@ function renderTreatment() {
         <span>${escapeHtml(state.treatmentLoadError)}</span>
       </div>
     ` : "",
-    ...filtered.map(treatmentCaseMarkup),
+    ...visible.map(treatmentCaseMarkup),
     !filtered.length ? `
       <div class="treatment-empty-state">
         <strong>Nenhum caso nesta visão</strong>
@@ -2740,6 +2756,7 @@ function renderTreatment() {
       </div>
     ` : "",
   ].join("");
+  renderTreatmentPagination(filtered.length, pageCount);
 }
 
 function renderTreatmentImpact(summary) {
@@ -2747,16 +2764,22 @@ function renderTreatmentImpact(summary) {
     active: state.contracts.length,
     portfolio: state.contracts.reduce((total, item) => total + toNumber(item.totalUpdatedValue), 0),
     integrated: state.contracts.reduce((total, item) => total + toNumber(item.effectivePaidValue), 0),
+    receivable: state.contracts.reduce((total, item) => total + toNumber(item.remainingBalance), 0),
+    overdue: state.contracts.reduce((total, item) => total + toNumber(item.overdueValue), 0),
   };
   const validated = {
     active: official.active + summary.validated.activeDelta,
     portfolio: official.portfolio + summary.validated.portfolioDelta,
     integrated: official.integrated + summary.validated.integratedDelta,
+    receivable: official.receivable + summary.validated.receivableDelta,
+    overdue: official.overdue + summary.validated.overdueDelta,
   };
   const potential = {
     active: official.active + summary.potential.activeDelta,
     portfolio: official.portfolio + summary.potential.portfolioDelta,
     integrated: official.integrated + summary.potential.integratedDelta,
+    receivable: official.receivable + summary.potential.receivableDelta,
+    overdue: official.overdue + summary.potential.overdueDelta,
   };
 
   document.getElementById("treatmentImpact").innerHTML = `
@@ -2786,9 +2809,81 @@ function treatmentImpactColumn(title, values, helper, tone) {
         <div><dt>Contratos ativos</dt><dd>${values.active}</dd></div>
         <div><dt>Carteira total</dt><dd>${formatCurrency(values.portfolio)}</dd></div>
         <div><dt>Integralizado</dt><dd>${formatCurrency(values.integrated)}</dd></div>
+        <div><dt>Saldo a receber</dt><dd>${formatCurrency(values.receivable)}</dd></div>
+        <div><dt>Valor em atraso</dt><dd>${formatCurrency(values.overdue)}</dd></div>
       </dl>
     </article>
   `;
+}
+
+function syncTreatmentRuleOptions(cases) {
+  const select = document.getElementById("treatmentRuleFilter");
+  const selected = select.value || "all";
+  const rules = [...new Map(cases.map((item) => [item.ruleId, item.ruleName])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
+  select.innerHTML = [
+    '<option value="all">Todas as regras</option>',
+    ...rules.map(([ruleId, ruleName]) => (
+      `<option value="${escapeAttr(ruleId)}">${escapeHtml(ruleName)}</option>`
+    )),
+  ].join("");
+  select.value = rules.some(([ruleId]) => ruleId === selected) ? selected : "all";
+}
+
+function renderTreatmentRuleOverview(cases) {
+  const selected = document.getElementById("treatmentRuleFilter").value;
+  const rules = [...cases.reduce((groups, item) => {
+    const current = groups.get(item.ruleId) || {
+      ruleId: item.ruleId,
+      name: item.ruleName,
+      total: 0,
+      pending: 0,
+      critical: 0,
+      resolvable: 0,
+    };
+    current.total += 1;
+    current.pending += item.decision === TREATMENT_DECISIONS.PENDING || item.reviewStale ? 1 : 0;
+    current.critical += item.severity === "critical" ? 1 : 0;
+    current.resolvable += item.resolvable ? 1 : 0;
+    groups.set(item.ruleId, current);
+    return groups;
+  }, new Map()).values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "pt-BR"));
+
+  document.getElementById("treatmentRuleOverview").innerHTML = rules.map((rule) => `
+    <button class="treatment-rule-card${selected === rule.ruleId ? " active" : ""}" type="button"
+      data-treatment-rule="${escapeAttr(rule.ruleId)}" aria-pressed="${selected === rule.ruleId}">
+      <span>${escapeHtml(rule.name)}</span>
+      <strong>${rule.total}</strong>
+      <small>${rule.pending} pendentes${rule.resolvable ? ` · ${rule.resolvable} tratáveis` : ""}</small>
+    </button>
+  `).join("");
+}
+
+function handleTreatmentRuleFilter(event) {
+  const trigger = event.target.closest("[data-treatment-rule]");
+  if (!trigger) return;
+  const select = document.getElementById("treatmentRuleFilter");
+  select.value = select.value === trigger.dataset.treatmentRule ? "all" : trigger.dataset.treatmentRule;
+  state.treatmentPage = 1;
+  renderTreatment();
+}
+
+function renderTreatmentPagination(total, pageCount) {
+  const pagination = document.getElementById("treatmentPagination");
+  pagination.hidden = total <= state.treatmentPageSize;
+  pagination.innerHTML = pagination.hidden ? "" : `
+    <button class="secondary-button" type="button" data-treatment-page="previous"${state.treatmentPage === 1 ? " disabled" : ""}>ANTERIOR</button>
+    <span>Página <strong>${state.treatmentPage}</strong> de ${pageCount}</span>
+    <button class="secondary-button" type="button" data-treatment-page="next"${state.treatmentPage === pageCount ? " disabled" : ""}>PRÓXIMA</button>
+  `;
+}
+
+function handleTreatmentPagination(event) {
+  const trigger = event.target.closest("[data-treatment-page]");
+  if (!trigger || trigger.disabled) return;
+  state.treatmentPage += trigger.dataset.treatmentPage === "next" ? 1 : -1;
+  renderTreatment();
+  document.getElementById("treatmentCaseList").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function filterTreatmentCases(cases) {
@@ -2822,8 +2917,18 @@ function treatmentCaseMarkup(item) {
     ? `${item.reviewedBy || "Administrador"} · ${formatDate(item.reviewedAt)}`
     : "Ainda não revisado";
   const activeImpact = toNumber(item.proposal?.activeDelta);
+  const portfolioImpact = toNumber(item.proposal?.portfolioDelta);
   const integratedImpact = toNumber(item.proposal?.integratedDelta);
-  const open = item.decision === TREATMENT_DECISIONS.PENDING || item.reviewStale;
+  const receivableImpact = toNumber(item.proposal?.receivableDelta);
+  const overdueImpact = toNumber(item.proposal?.overdueDelta);
+  const impacts = [
+    ["Ativos", formatSignedNumber(activeImpact), activeImpact],
+    ["Carteira", formatSignedCurrency(portfolioImpact), portfolioImpact],
+    ["Integralizado", formatSignedCurrency(integratedImpact), integratedImpact],
+    ["Saldo a receber", formatSignedCurrency(receivableImpact), receivableImpact],
+    ["Em atraso", formatSignedCurrency(overdueImpact), overdueImpact],
+  ].filter(([, , value]) => value !== 0);
+  const open = item.reviewStale;
 
   return `
     <details class="treatment-case treatment-case-${escapeAttr(item.severity)}" data-treatment-case="${escapeAttr(item.id)}"${open ? " open" : ""}>
@@ -2860,8 +2965,9 @@ function treatmentCaseMarkup(item) {
             <p class="eyebrow">RESULTADO PROPOSTO</p>
             <p>${escapeHtml(item.proposedSummary)}</p>
             <div class="treatment-proposal-impact">
-              <span>Ativos <strong>${formatSignedNumber(activeImpact)}</strong></span>
-              <span>Integralizado <strong>${formatSignedCurrency(integratedImpact)}</strong></span>
+              ${impacts.length
+                ? impacts.map(([label, value]) => `<span>${escapeHtml(label)} <strong>${escapeHtml(value)}</strong></span>`).join("")
+                : "<span>Sem alteração automática até validação</span>"}
             </div>
           </section>
         </div>
@@ -2916,6 +3022,7 @@ function clearTreatmentFilters() {
   document.getElementById("treatmentRuleFilter").value = "all";
   document.getElementById("treatmentDecisionFilter").value = "all";
   document.getElementById("treatmentConfidenceFilter").value = "all";
+  state.treatmentPage = 1;
   renderTreatment();
 }
 
