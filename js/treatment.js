@@ -36,6 +36,9 @@ export function buildTreatmentCases({
     ...transferCases,
     ...buildPossibleDuplicateCases(contracts),
     ...buildAdjustedValueDivergenceCases(contracts),
+    ...buildUpdatedFinancedOutlierCases(contracts),
+    ...buildUpdatedBelowFinancedCases(contracts),
+    ...buildReversionFinancedValueCases(contracts, reversionsByActive),
     ...buildIncompletePaidCases(contracts, transferredIds),
     ...buildOverdueAboveBalanceCases(contracts),
     ...buildMissingHistoricalDateCases(reversions, historicalTerminated),
@@ -436,6 +439,173 @@ function buildAdjustedValueDivergenceCases(contracts) {
   });
 }
 
+function buildUpdatedFinancedOutlierCases(contracts) {
+  const ratiosByCategory = categoryRatioStats(contracts);
+  return contracts.flatMap((contract) => {
+    const financed = Math.max(0, toNumber(contract.financedValue));
+    const updated = Math.max(0, toNumber(contract.totalUpdatedValue));
+    if (financed <= 0 || updated <= 0) return [];
+    const ratio = updated / financed;
+    const excess = updated - financed;
+    if (ratio < 1.8 || excess <= 10000) return [];
+
+    const categoryStats = ratiosByCategory.get(contract.category || "") || {};
+    const severity = ratio >= 2 || excess >= 100000 ? "critical" : "warning";
+    const confidence = ratio >= 2 ? "high" : "medium";
+    const contractId = String(contract.contractId);
+    return [{
+      id: `updated-financed-outlier:${contractId}`,
+      ruleId: "updated-financed-outlier",
+      ruleName: "Valor atualizado acima do financiado",
+      contract,
+      severity,
+      confidence,
+      autoEligible: false,
+      resolvable: false,
+      issue: "O valor atualizado estÃ¡ muito acima do valor financiado. Se a diferenÃ§a deveria ser apenas INCC/reajuste, o campo precisa ser conferido.",
+      evidence: [
+        `Valor financiado: ${money(financed)}`,
+        `Valor atualizado: ${money(updated)}`,
+        `DiferenÃ§a absoluta: ${money(excess)}`,
+        `RelaÃ§Ã£o atualizado/financiado: ${(ratio * 100).toFixed(1)}%`,
+        categoryStats.median ? `Mediana da categoria ${contract.category || "-"}: ${(categoryStats.median * 100).toFixed(1)}%` : "",
+      ].filter(Boolean),
+      expected: "Valor atualizado compatÃ­vel com o valor financiado acrescido de reajustes plausÃ­veis, sem salto incompatÃ­vel com a carteira.",
+      proposedSummary: "Conferir se o valor atualizado recebeu componente indevido, se a coluna foi interpretada corretamente ou se hÃ¡ efeito de reversÃ£o/projeto.",
+      proposal: emptyImpactProposal("investigate_updated_financed_outlier", {
+        currentFinancedValue: financed,
+        currentTotalUpdatedValue: updated,
+        appreciationRatio: ratio,
+        excessValue: excess,
+        categoryMedianRatio: categoryStats.median || null,
+      }),
+      sourceFingerprint: treatmentFingerprint({
+        ruleId: "updated-financed-outlier",
+        contractId,
+        financed,
+        updated,
+        ratio,
+        categoryMedian: categoryStats.median || null,
+      }),
+    }];
+  });
+}
+
+function buildUpdatedBelowFinancedCases(contracts) {
+  return contracts.flatMap((contract) => {
+    const financed = Math.max(0, toNumber(contract.financedValue));
+    const updated = Math.max(0, toNumber(contract.totalUpdatedValue));
+    if (financed <= 0 || updated <= 0) return [];
+    const ratio = updated / financed;
+    const gap = financed - updated;
+    if (ratio >= 0.8 || gap <= 1000) return [];
+
+    const contractId = String(contract.contractId);
+    return [{
+      id: `updated-below-financed:${contractId}`,
+      ruleId: "updated-below-financed",
+      ruleName: "Valor atualizado abaixo do financiado",
+      contract,
+      severity: ratio < 0.5 ? "critical" : "warning",
+      confidence: ratio < 0.5 ? "high" : "medium",
+      autoEligible: false,
+      resolvable: false,
+      issue: "O valor atualizado ficou abaixo do valor financiado em proporÃ§Ã£o incompatÃ­vel com uma carteira reajustada.",
+      evidence: [
+        `Valor financiado: ${money(financed)}`,
+        `Valor atualizado: ${money(updated)}`,
+        `DiferenÃ§a negativa: ${money(gap)}`,
+        `RelaÃ§Ã£o atualizado/financiado: ${(ratio * 100).toFixed(1)}%`,
+        contract.financialStatus ? `Status financeiro: ${contract.financialStatus}` : "",
+      ].filter(Boolean),
+      expected: "Valor atualizado igual ou superior ao valor financiado, salvo desconto, baixa ou exceÃ§Ã£o documental claramente identificada.",
+      proposedSummary: "Conferir se a origem gravou apenas entrada, parcela, valor residual ou outro campo no lugar do valor atualizado do contrato.",
+      proposal: emptyImpactProposal("investigate_updated_below_financed", {
+        currentFinancedValue: financed,
+        currentTotalUpdatedValue: updated,
+        appreciationRatio: ratio,
+        negativeGapValue: gap,
+      }),
+      sourceFingerprint: treatmentFingerprint({
+        ruleId: "updated-below-financed",
+        contractId,
+        financed,
+        updated,
+        ratio,
+      }),
+    }];
+  });
+}
+
+function buildReversionFinancedValueCases(contracts, reversionsByActive) {
+  return contracts.flatMap((contract) => {
+    const linkedReversions = reversionsByActive.get(String(contract.contractId)) || [];
+    if (!linkedReversions.length) return [];
+
+    const financed = Math.max(0, toNumber(contract.financedValue));
+    const updated = Math.max(0, toNumber(contract.totalUpdatedValue));
+    if (financed <= 0 || updated <= 0) return [];
+
+    const sameFamily = linkedReversions.filter((item) => sameFinancialFamily(contract, item));
+    if (!sameFamily.length) return [];
+
+    const ratio = updated / financed;
+    const predecessorReference = Math.max(...sameFamily.map((item) => Math.max(
+      toNumber(item.financedValue),
+      toNumber(item.totalUpdatedValue),
+      toNumber(item.entryValue),
+      toNumber(item.effectivePaidValue),
+    )), 0);
+    const financedShift = predecessorReference > 0 ? Math.abs(financed - predecessorReference) : 0;
+    const financedShiftRatio = predecessorReference > 0 ? financedShift / predecessorReference : 0;
+    const highUpdatedRatio = ratio >= 1.6 && updated - financed > 10000;
+    const materialFinancedShift = predecessorReference > 0 && financedShiftRatio >= 0.35 && financedShift > 10000;
+    if (!highUpdatedRatio && !materialFinancedShift) return [];
+
+    const contractId = String(contract.contractId);
+    const predecessorIds = sameFamily.map((item) => String(item.contractId)).sort();
+    return [{
+      id: `reversion-financed-value:${contractId}:${predecessorIds.join("-")}`,
+      ruleId: "reversion-financed-value",
+      ruleName: "Valor financiado exige leitura da reversÃ£o",
+      contract,
+      severity: ratio >= 2 || materialFinancedShift ? "critical" : "warning",
+      confidence: ratio >= 1.8 || materialFinancedShift ? "high" : "medium",
+      autoEligible: false,
+      resolvable: false,
+      issue: "O contrato ativo possui reversÃ£o na mesma famÃ­lia financeira e o valor financiado/atualizado pode nÃ£o representar o fechamento originÃ¡rio.",
+      evidence: [
+        `ReversÃ£o(Ãµes) vinculada(s): ${predecessorIds.join(", ")}`,
+        `Categoria atual: ${contract.category || "-"}`,
+        `Valor financiado ativo: ${money(financed)}`,
+        `Valor atualizado ativo: ${money(updated)}`,
+        `RelaÃ§Ã£o atualizado/financiado: ${(ratio * 100).toFixed(1)}%`,
+        predecessorReference > 0 ? `Maior referÃªncia financeira na origem: ${money(predecessorReference)}` : "",
+        materialFinancedShift ? `DiferenÃ§a frente Ã  origem: ${money(financedShift)}` : "",
+      ].filter(Boolean),
+      expected: "Quando a reversÃ£o for apenas atualizaÃ§Ã£o de projeto, o valor financiado deve respeitar a negociaÃ§Ã£o originÃ¡ria ou uma regra documentada de substituiÃ§Ã£o.",
+      proposedSummary: "Analisar a cadeia da reversÃ£o antes de usar o valor financiado para simulador, valorizaÃ§Ã£o ou leitura gerencial da carteira.",
+      proposal: emptyImpactProposal("review_reversion_financed_value", {
+        currentFinancedValue: financed,
+        currentTotalUpdatedValue: updated,
+        predecessorReferenceValue: predecessorReference || null,
+        appreciationRatio: ratio,
+        financedShiftValue: financedShift,
+        linkedReversionIds: predecessorIds,
+      }),
+      sourceFingerprint: treatmentFingerprint({
+        ruleId: "reversion-financed-value",
+        contractId,
+        financed,
+        updated,
+        ratio,
+        predecessorReference,
+        predecessorIds,
+      }),
+    }];
+  });
+}
+
 function buildIncompletePaidCases(contracts, transferredIds) {
   return contracts.flatMap((contract) => {
     if (normalize(contract.financialStatus) !== "quitado") return [];
@@ -606,6 +776,45 @@ function extraNumericValue(sourceExtras, expectedKey) {
   return Number.isFinite(value) ? value : null;
 }
 
+function categoryRatioStats(contracts) {
+  const groups = new Map();
+  contracts.forEach((contract) => {
+    const financed = Math.max(0, toNumber(contract.financedValue));
+    const updated = Math.max(0, toNumber(contract.totalUpdatedValue));
+    if (financed <= 0 || updated <= 0) return;
+    const ratio = updated / financed;
+    if (ratio < 0.5 || ratio > 1.6) return;
+    const key = contract.category || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(ratio);
+  });
+  return new Map([...groups.entries()].map(([key, values]) => [key, {
+    median: median(values),
+    count: values.length,
+  }]));
+}
+
+function sameFinancialFamily(active, predecessor) {
+  if (active.category && predecessor.category && active.category === predecessor.category) return true;
+  const activeProduct = normalizeProductFamily(active.product);
+  const predecessorProduct = normalizeProductFamily(predecessor.product);
+  if (!activeProduct || !predecessorProduct) return false;
+  return activeProduct === predecessorProduct;
+}
+
+function normalizeProductFamily(value) {
+  const normalized = normalize(value)
+    .replace(/\b(luxo|villamor|bangalo|luxury|t|integral|cota)\b/g, " ")
+    .replace(/\b\d+(?:o|º|°)?\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (normalized.includes("diamante")) return "diamante";
+  if (normalized.includes("ouro")) return "ouro";
+  if (normalized.includes("prata")) return "prata";
+  if (normalized.includes("bronze")) return "bronze";
+  return normalized;
+}
+
 function emptyImpactProposal(action, extra = {}) {
   return {
     action,
@@ -715,6 +924,15 @@ function normalizedPercent(value) {
 
 function financialTolerance(reference) {
   return Math.max(1, Math.abs(toNumber(reference)) * 0.0005);
+}
+
+function median(values) {
+  if (!values.length) return null;
+  const ordered = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(ordered.length / 2);
+  return ordered.length % 2
+    ? ordered[middle]
+    : (ordered[middle - 1] + ordered[middle]) / 2;
 }
 
 function normalize(value) {

@@ -26,11 +26,11 @@ import {
   buildTreatmentCases,
   summarizeTreatmentCases,
   TREATMENT_DECISIONS,
-} from "./treatment.js?v=20260702-1";
+} from "./treatment.js?v=20260715-1";
 
 const db = createDataProvider();
 const NAVIGATION_STORAGE_KEY = "pos-venda-vip-navigation-collapsed";
-const APP_VERSION = "2026.07.02.1";
+const APP_VERSION = "2026.07.15.1";
 const state = {
   contracts: [],
   terminated: [],
